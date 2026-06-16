@@ -421,12 +421,13 @@ h1 {
 }
 
 .date-presets {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
 .date-presets button {
+  flex: 1 1 86px;
   min-height: 38px;
   border: 1px solid #e4d9c7;
   border-radius: 999px;
@@ -436,6 +437,10 @@ h1 {
   font-size: 12px;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.date-presets button[data-clear-date] {
+  flex-basis: 104px;
 }
 
 .date-presets button.active {
@@ -620,9 +625,58 @@ h1 {
   color: var(--warn);
 }
 
+.auth-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffaf0;
+  padding: 12px;
+}
+
+.auth-panel .kicker,
+.auth-panel .dialog-copy {
+  margin: 0;
+}
+
+.auth-actions,
+.invite-box {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.invite-box {
+  grid-template-columns: 1fr auto auto;
+}
+
+.invite-box input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  outline: 0;
+  background: #f5efe1;
+  color: var(--ink);
+  font-size: 14px;
+  padding: 12px;
+}
+
+.auth-actions button,
+.invite-box button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 900;
+  background: #eadfcb;
+  color: var(--ink);
+}
+
 .toolbar {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   gap: 8px;
   margin-bottom: 18px;
   padding: 10px;
@@ -690,11 +744,12 @@ h1 {
     grid-template-columns: 1fr;
   }
 
-  .date-presets {
-    grid-template-columns: repeat(3, 1fr);
+  .detail-actions {
+    grid-template-columns: 1fr;
   }
 
-  .detail-actions {
+  .auth-actions,
+  .invite-box {
     grid-template-columns: 1fr;
   }
 }

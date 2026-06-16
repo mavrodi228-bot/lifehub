@@ -68,6 +68,7 @@ const searchInput = document.querySelector('#search-input');
 const form = document.querySelector('#add-form');
 const tabs = Array.from(document.querySelectorAll('.tab'));
 const clearDoneButton = document.querySelector('#clear-done-button');
+const inviteFamilyButton = document.querySelector('#invite-family-button');
 const exportButton = document.querySelector('#export-button');
 const syncButton = document.querySelector('#sync-button');
 const detailDialog = document.querySelector('#detail-dialog');
@@ -90,11 +91,21 @@ const supabaseUrlInput = document.querySelector('#supabase-url');
 const supabaseKeyInput = document.querySelector('#supabase-key');
 const workspaceKeyInput = document.querySelector('#workspace-key');
 const syncStatus = document.querySelector('#sync-status');
+const authEmailInput = document.querySelector('#auth-email');
+const authStatus = document.querySelector('#auth-status');
+const sendLoginButton = document.querySelector('#send-login-button');
+const signOutButton = document.querySelector('#sign-out-button');
+const createInviteButton = document.querySelector('#create-invite-button');
+const copyInviteButton = document.querySelector('#copy-invite-button');
+const inviteLinkInput = document.querySelector('#invite-link');
 
 let selectedAttachment = null;
 let editingItem = null;
 let cloudConfig = loadCloudConfig();
 let supabaseClient = createSupabaseClient();
+let currentUser = null;
+let authSubscription = null;
+let pendingInviteToken = getInviteTokenFromUrl();
 
 form.addEventListener('submit', (event) => {
   event.preventDefault();
@@ -115,6 +126,10 @@ clearDoneButton.addEventListener('click', () => {
 
 exportButton.addEventListener('click', exportData);
 syncButton.addEventListener('click', openSyncDialog);
+inviteFamilyButton.addEventListener('click', () => {
+  openSyncDialog();
+  inviteLinkInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
 fileInput.addEventListener('change', handleFileSelection);
 dateInput.addEventListener('change', updateDatePresetState);
 datePresetButtons.forEach((button) => {
@@ -131,6 +146,10 @@ closeSyncButton.addEventListener('click', () => syncDialog.close());
 disconnectSyncButton.addEventListener('click', disconnectCloud);
 pullSyncButton.addEventListener('click', pullFromCloud);
 pushSyncButton.addEventListener('click', pushToCloud);
+sendLoginButton.addEventListener('click', sendMagicLink);
+signOutButton.addEventListener('click', signOut);
+createInviteButton.addEventListener('click', createInviteLink);
+copyInviteButton.addEventListener('click', copyInviteLink);
 
 tabs.forEach((tab) => {
   tab.addEventListener('click', () => {
@@ -151,6 +170,7 @@ tabs.forEach((tab) => {
 
 updateCloudBadge();
 render();
+initAuth();
 
 function createItem(title, category = 'Общее', dueDate = '', note = '', done = false, attachment = null) {
   return {
@@ -242,7 +262,13 @@ function saveCloudConfigToStorage() {
 
 function createSupabaseClient() {
   if (!cloudConfig.url || !cloudConfig.key || !window.supabase?.createClient) return null;
-  return window.supabase.createClient(cloudConfig.url, cloudConfig.key);
+  return window.supabase.createClient(cloudConfig.url, cloudConfig.key, {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
+    },
+  });
 }
 
 function isCloudReady() {
@@ -250,7 +276,7 @@ function isCloudReady() {
 }
 
 function updateCloudBadge(text) {
-  syncButton.textContent = text || (isCloudReady() ? 'Облако' : 'Локально');
+  syncButton.textContent = text || (isCloudReady() ? (currentUser ? 'Семья' : 'Облако') : 'Локально');
   syncButton.classList.toggle('connected', isCloudReady());
 }
 
@@ -317,6 +343,7 @@ function render() {
     input.placeholder = placeholders[tab];
     searchInput.value = state.query;
     clearDoneButton.style.display = tab === 'tasks' ? 'block' : 'none';
+    inviteFamilyButton.style.display = tab === 'family' ? 'block' : 'none';
     fileRow.classList.toggle('visible', tab === 'documents');
     listTitle.textContent = sectionTitles[tab];
     renderList(tab);
@@ -540,6 +567,8 @@ function openSyncDialog() {
   supabaseUrlInput.value = cloudConfig.url || '';
   supabaseKeyInput.value = cloudConfig.key || '';
   workspaceKeyInput.value = cloudConfig.workspaceKey || '';
+  inviteLinkInput.value = '';
+  updateAuthUI();
   setSyncStatus(isCloudReady() ? 'Облако подключено. Можно выгружать и загружать данные.' : 'Облако не подключено.');
   syncDialog.showModal();
 }
@@ -562,6 +591,7 @@ async function saveCloudConfig(event) {
 
   try {
     await testCloudConnection();
+    await initAuth();
     setSyncStatus('Подключено. Можно нажать “Выгрузить”, чтобы отправить текущие данные в Supabase.', false, true);
   } catch (error) {
     setSyncStatus(error.message || 'Не получилось подключиться к Supabase.', true);
@@ -630,6 +660,9 @@ async function pullFromCloud() {
 }
 
 function disconnectCloud() {
+  if (supabaseClient) {
+    supabaseClient.auth.signOut().catch(console.error);
+  }
   cloudConfig = {
     url: '',
     key: '',
@@ -637,7 +670,9 @@ function disconnectCloud() {
   };
   saveCloudConfigToStorage();
   supabaseClient = null;
+  currentUser = null;
   updateCloudBadge();
+  updateAuthUI();
   setSyncStatus('Облако отключено. LifeHub снова работает локально.');
 }
 
@@ -645,6 +680,204 @@ function setSyncStatus(message, isError = false, isOk = false) {
   syncStatus.textContent = message;
   syncStatus.classList.toggle('error', isError);
   syncStatus.classList.toggle('ok', isOk);
+}
+
+async function initAuth() {
+  if (!supabaseClient) {
+    currentUser = null;
+    updateAuthUI();
+    return;
+  }
+
+  if (authSubscription) {
+    authSubscription.unsubscribe();
+    authSubscription = null;
+  }
+
+  const { data } = await supabaseClient.auth.getSession();
+  currentUser = data.session?.user || null;
+  updateAuthUI();
+  await acceptPendingInvite();
+
+  const { data: listener } = supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+    currentUser = session?.user || null;
+    updateAuthUI();
+    updateCloudBadge();
+    await acceptPendingInvite();
+  });
+  authSubscription = listener.subscription;
+}
+
+function updateAuthUI() {
+  if (!authStatus) return;
+  if (!isCloudReady()) {
+    authStatus.textContent = 'Сначала подключи Supabase URL и anon key.';
+    sendLoginButton.disabled = true;
+    signOutButton.disabled = true;
+    createInviteButton.disabled = true;
+    copyInviteButton.disabled = true;
+    return;
+  }
+
+  sendLoginButton.disabled = false;
+  signOutButton.disabled = !currentUser;
+  createInviteButton.disabled = !currentUser;
+  copyInviteButton.disabled = !inviteLinkInput.value;
+  authStatus.textContent = currentUser
+    ? `Вошел: ${currentUser.email || currentUser.id}`
+    : 'Войди по email, чтобы создавать семейные ссылки.';
+}
+
+async function sendMagicLink() {
+  if (!isCloudReady()) {
+    setSyncStatus('Сначала сохрани Supabase URL и key.', true);
+    return;
+  }
+
+  const email = authEmailInput.value.trim();
+  if (!email) {
+    setSyncStatus('Введи email для входа.', true);
+    return;
+  }
+
+  const { error } = await supabaseClient.auth.signInWithOtp({
+    email,
+    options: {
+      emailRedirectTo: window.location.href,
+    },
+  });
+
+  if (error) {
+    setSyncStatus(error.message, true);
+    return;
+  }
+
+  setSyncStatus('Отправил ссылку для входа на email. Открой ее на этом устройстве.', false, true);
+}
+
+async function signOut() {
+  if (!supabaseClient) return;
+  await supabaseClient.auth.signOut();
+  currentUser = null;
+  updateAuthUI();
+  updateCloudBadge();
+  setSyncStatus('Ты вышел из аккаунта.');
+}
+
+async function createInviteLink() {
+  if (!isCloudReady()) {
+    setSyncStatus('Сначала подключи облако.', true);
+    return;
+  }
+  if (!currentUser) {
+    setSyncStatus('Сначала войди по email.', true);
+    return;
+  }
+
+  try {
+    await ensureHousehold();
+    const token = makeInviteToken();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 14);
+
+    const { error } = await supabaseClient.from('lifehub_invites').insert({
+      token,
+      workspace_key: cloudConfig.workspaceKey,
+      created_by: currentUser.id,
+      expires_at: expiresAt.toISOString(),
+    });
+    if (error) throw error;
+
+    inviteLinkInput.value = `${window.location.origin}${window.location.pathname}?invite=${token}`;
+    copyInviteButton.disabled = false;
+    setSyncStatus('Инвайт создан. Ссылка действует 14 дней.', false, true);
+  } catch (error) {
+    setSyncStatus(error.message || 'Не получилось создать инвайт.', true);
+  }
+}
+
+async function copyInviteLink() {
+  if (!inviteLinkInput.value) return;
+  await navigator.clipboard.writeText(inviteLinkInput.value);
+  setSyncStatus('Ссылка скопирована.', false, true);
+}
+
+async function ensureHousehold() {
+  const { error: householdError } = await supabaseClient.from('lifehub_households').upsert({
+    workspace_key: cloudConfig.workspaceKey,
+    name: 'LifeHub family',
+    owner_user_id: currentUser.id,
+  }, { onConflict: 'workspace_key' });
+  if (householdError) throw householdError;
+
+  const { error: memberError } = await supabaseClient.from('lifehub_members').upsert({
+    workspace_key: cloudConfig.workspaceKey,
+    user_id: currentUser.id,
+    email: currentUser.email || '',
+    role: 'owner',
+  }, { onConflict: 'workspace_key,user_id' });
+  if (memberError) throw memberError;
+}
+
+async function acceptPendingInvite() {
+  if (!pendingInviteToken || !isCloudReady() || !currentUser) return;
+
+  try {
+    const { data: invite, error } = await supabaseClient
+      .from('lifehub_invites')
+      .select('*')
+      .eq('token', pendingInviteToken)
+      .maybeSingle();
+    if (error) throw error;
+    if (!invite) throw new Error('Инвайт не найден.');
+    if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
+      throw new Error('Инвайт уже истек.');
+    }
+
+    cloudConfig.workspaceKey = invite.workspace_key;
+    workspaceKeyInput.value = cloudConfig.workspaceKey;
+    saveCloudConfigToStorage();
+    updateCloudBadge();
+
+    const { error: memberError } = await supabaseClient.from('lifehub_members').upsert({
+      workspace_key: invite.workspace_key,
+      user_id: currentUser.id,
+      email: currentUser.email || '',
+      role: 'member',
+    }, { onConflict: 'workspace_key,user_id' });
+    if (memberError) throw memberError;
+
+    addFamilyMemberFromAuth(currentUser.email || 'Новый участник');
+    await pullFromCloud();
+    pendingInviteToken = '';
+    window.history.replaceState({}, document.title, window.location.pathname);
+    setSyncStatus('Инвайт принят. Ты добавлен в семью.', false, true);
+  } catch (error) {
+    setSyncStatus(error.message || 'Не получилось принять инвайт.', true);
+  }
+}
+
+function addFamilyMemberFromAuth(email) {
+  if (state.family.some((item) => item.title === email)) return;
+  state.family = [
+    createItem(email, 'Участник', '', 'Добавлен по инвайт-ссылке'),
+    ...state.family,
+  ];
+  saveState();
+}
+
+function getInviteTokenFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('invite') || '';
+}
+
+function makeInviteToken() {
+  const bytes = new Uint8Array(18);
+  globalThis.crypto?.getRandomValues?.(bytes);
+  if (bytes.some(Boolean)) {
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function daysUntil(value) {

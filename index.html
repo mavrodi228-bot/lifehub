@@ -69,7 +69,7 @@
             <button type="button" data-days="1">Завтра</button>
             <button type="button" data-days="7">7 дней</button>
             <button type="button" data-days="30">30 дней</button>
-            <button type="button" data-clear-date>Без срока</button>
+            <button type="button" data-clear-date>Нет срока</button>
           </div>
           <label id="file-row" class="file-row">
             <input id="file-input" type="file" accept="image/*,.pdf" />
@@ -80,6 +80,7 @@
 
         <section class="toolbar">
           <input id="search-input" autocomplete="off" placeholder="Поиск" />
+          <button id="invite-family-button" type="button">Инвайт</button>
           <button id="clear-done-button" type="button">Очистить</button>
         </section>
 
@@ -182,6 +183,33 @@
           </label>
 
           <div id="sync-status" class="sync-status">Облако не подключено.</div>
+
+          <section class="auth-panel">
+            <div>
+              <p class="kicker">Аккаунт</p>
+              <p id="auth-status" class="dialog-copy">Войди по email, чтобы семья могла подключаться по ссылке.</p>
+            </div>
+            <label class="field-label">
+              Email
+              <input id="auth-email" type="email" autocomplete="email" placeholder="you@example.com" />
+            </label>
+            <div class="auth-actions">
+              <button id="send-login-button" class="secondary-button" type="button">Войти по ссылке</button>
+              <button id="sign-out-button" class="secondary-button" type="button">Выйти</button>
+            </div>
+          </section>
+
+          <section class="auth-panel">
+            <div>
+              <p class="kicker">Семья</p>
+              <p class="dialog-copy">Создай ссылку и отправь ее человеку. После входа он станет участником этого пространства.</p>
+            </div>
+            <div class="invite-box">
+              <input id="invite-link" readonly placeholder="Ссылка появится здесь" />
+              <button id="create-invite-button" class="secondary-button" type="button">Создать</button>
+              <button id="copy-invite-button" class="secondary-button" type="button">Копия</button>
+            </div>
+          </section>
 
           <div class="detail-actions">
             <button id="disconnect-sync-button" class="secondary-button" type="button">Отключить</button>
