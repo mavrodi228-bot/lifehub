@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#263028" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="LifeHub" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>LifeHub</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="kicker">LifeHub</p>
+          <h1 id="screen-title">Главная</h1>
+        </div>
+        <button id="export-button" class="badge" type="button">Экспорт</button>
+      </header>
+
+      <section id="home-screen" class="screen active">
+        <section class="hero">
+          <div>
+            <span class="hero-label">Домашний пульт</span>
+            <h2 id="hero-headline">0 дел ждут внимания</h2>
+          </div>
+          <p id="hero-copy">Порядок держится на маленьких напоминаниях.</p>
+        </section>
+
+        <section class="stats">
+          <article>
+            <strong id="task-count">0</strong>
+            <span>Активные</span>
+          </article>
+          <article>
+            <strong id="soon-count">0</strong>
+            <span>Скоро</span>
+          </article>
+          <article>
+            <strong id="document-count">0</strong>
+            <span>Документы</span>
+          </article>
+        </section>
+
+        <section class="block">
+          <h3>Ближайшее</h3>
+          <div id="focus-list" class="list"></div>
+        </section>
+      </section>
+
+      <section id="list-screen" class="screen">
+        <form id="add-form" class="composer">
+          <input id="item-input" autocomplete="off" />
+          <div class="composer-grid">
+            <input id="date-input" type="date" />
+            <input id="note-input" autocomplete="off" placeholder="Заметка" />
+          </div>
+          <label id="file-row" class="file-row">
+            <input id="file-input" type="file" accept="image/*,.pdf" />
+            <span>Прикрепить фото или PDF</span>
+          </label>
+          <button type="submit">Добавить</button>
+        </form>
+
+        <section class="toolbar">
+          <input id="search-input" autocomplete="off" placeholder="Поиск" />
+          <button id="clear-done-button" type="button">Очистить</button>
+        </section>
+
+        <section class="block">
+          <h3 id="list-title">Список</h3>
+          <div id="item-list" class="list"></div>
+        </section>
+      </section>
+
+      <nav class="tabbar" aria-label="Разделы LifeHub">
+        <button class="tab active" data-tab="home">
+          <span>H</span>
+          <small>Главная</small>
+        </button>
+        <button class="tab" data-tab="tasks">
+          <span>T</span>
+          <small>Задачи</small>
+        </button>
+        <button class="tab" data-tab="shopping">
+          <span>S</span>
+          <small>Покупки</small>
+        </button>
+        <button class="tab" data-tab="documents">
+          <span>D</span>
+          <small>Документы</small>
+        </button>
+        <button class="tab" data-tab="family">
+          <span>F</span>
+          <small>Семья</small>
+        </button>
+      </nav>
+
+      <dialog id="detail-dialog" class="detail-dialog">
+        <form id="detail-form" method="dialog">
+          <div class="detail-head">
+            <div>
+              <p class="kicker">Карточка</p>
+              <h2 id="detail-heading">Документ</h2>
+            </div>
+            <button id="close-detail-button" class="delete-button" type="button">×</button>
+          </div>
+
+          <label class="field-label">
+            Название
+            <input id="detail-title" autocomplete="off" />
+          </label>
+
+          <div class="composer-grid">
+            <label class="field-label">
+              Срок
+              <input id="detail-date" type="date" />
+            </label>
+            <label class="field-label">
+              Категория
+              <input id="detail-category" autocomplete="off" />
+            </label>
+          </div>
+
+          <label class="field-label">
+            Заметка
+            <textarea id="detail-note" rows="4"></textarea>
+          </label>
+
+          <div id="attachment-panel" class="attachment-panel"></div>
+
+          <div class="detail-actions">
+            <button id="delete-detail-button" class="secondary-button" type="button">Удалить</button>
+            <button id="save-detail-button" type="submit">Сохранить</button>
+          </div>
+        </form>
+      </dialog>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

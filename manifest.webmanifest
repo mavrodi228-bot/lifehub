@@ -1,0 +1,17 @@
+{
+  "name": "LifeHub",
+  "short_name": "LifeHub",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#F7F3EA",
+  "theme_color": "#263028",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
