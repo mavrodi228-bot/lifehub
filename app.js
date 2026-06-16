@@ -61,6 +61,7 @@ const dateInput = document.querySelector('#date-input');
 const noteInput = document.querySelector('#note-input');
 const fileInput = document.querySelector('#file-input');
 const fileRow = document.querySelector('#file-row');
+const datePresetButtons = Array.from(document.querySelectorAll('.date-presets button'));
 const searchInput = document.querySelector('#search-input');
 const form = document.querySelector('#add-form');
 const tabs = Array.from(document.querySelectorAll('.tab'));
@@ -99,6 +100,10 @@ clearDoneButton.addEventListener('click', () => {
 
 exportButton.addEventListener('click', exportData);
 fileInput.addEventListener('change', handleFileSelection);
+dateInput.addEventListener('change', updateDatePresetState);
+datePresetButtons.forEach((button) => {
+  button.addEventListener('click', () => applyDatePreset(button));
+});
 detailForm.addEventListener('submit', saveDetail);
 closeDetailButton.addEventListener('click', () => detailDialog.close());
 deleteDetailButton.addEventListener('click', deleteEditingItem);
@@ -116,6 +121,7 @@ tabs.forEach((tab) => {
     fileInput.value = '';
     selectedAttachment = null;
     fileRow.querySelector('span').textContent = 'Прикрепить фото или PDF';
+    updateDatePresetState();
     searchInput.value = '';
     saveState();
     render();
@@ -207,6 +213,7 @@ function addItem() {
   fileInput.value = '';
   selectedAttachment = null;
   fileRow.querySelector('span').textContent = 'Прикрепить фото или PDF';
+  updateDatePresetState();
   saveState();
   render();
 }
@@ -394,6 +401,24 @@ function daysFromNow(days) {
   const date = new Date();
   date.setDate(date.getDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function applyDatePreset(button) {
+  if (button.hasAttribute('data-clear-date')) {
+    dateInput.value = '';
+  } else {
+    dateInput.value = daysFromNow(Number(button.dataset.days || 0));
+  }
+  updateDatePresetState();
+}
+
+function updateDatePresetState() {
+  datePresetButtons.forEach((button) => {
+    const expected = button.hasAttribute('data-clear-date')
+      ? ''
+      : daysFromNow(Number(button.dataset.days || 0));
+    button.classList.toggle('active', dateInput.value === expected);
+  });
 }
 
 function daysUntil(value) {

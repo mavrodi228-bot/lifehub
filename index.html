@@ -55,8 +55,18 @@
         <form id="add-form" class="composer">
           <input id="item-input" autocomplete="off" />
           <div class="composer-grid">
-            <input id="date-input" type="date" />
+            <label class="date-field">
+              <span>Срок</span>
+              <input id="date-input" type="date" />
+            </label>
             <input id="note-input" autocomplete="off" placeholder="Заметка" />
+          </div>
+          <div class="date-presets" aria-label="Быстрый выбор даты">
+            <button type="button" data-days="0">Сегодня</button>
+            <button type="button" data-days="1">Завтра</button>
+            <button type="button" data-days="7">7 дней</button>
+            <button type="button" data-days="30">30 дней</button>
+            <button type="button" data-clear-date>Без срока</button>
           </div>
           <label id="file-row" class="file-row">
             <input id="file-input" type="file" accept="image/*,.pdf" />
