@@ -634,6 +634,29 @@ h1 {
   padding: 12px;
 }
 
+.developer-settings {
+  border: 1px dashed #d8cfbd;
+  border-radius: 8px;
+  background: #faf5e8;
+  padding: 10px 12px;
+}
+
+.developer-settings summary {
+  color: #4f574b;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.developer-settings[open] {
+  display: grid;
+  gap: 10px;
+}
+
+.developer-settings[open] summary {
+  margin-bottom: 2px;
+}
+
 .auth-panel .kicker,
 .auth-panel .dialog-copy {
   margin: 0;

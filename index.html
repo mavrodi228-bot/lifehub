@@ -158,29 +158,32 @@
           <div class="detail-head">
             <div>
               <p class="kicker">Облако</p>
-              <h2>Supabase</h2>
+              <h2>Аккаунт</h2>
             </div>
             <button id="close-sync-button" class="delete-button" type="button">×</button>
           </div>
 
           <p class="dialog-copy">
-            Вставь URL проекта и publishable anon key. После сохранения LifeHub сможет синхронизировать карточки и хранить вложения в Storage.
+            Войди по email, чтобы LifeHub синхронизировал данные в облаке и подключал членов семьи по ссылке.
           </p>
 
-          <label class="field-label">
-            Supabase URL
-            <input id="supabase-url" autocomplete="off" placeholder="https://xxxx.supabase.co" />
-          </label>
+          <details class="developer-settings">
+            <summary>Настройка backend</summary>
+            <label class="field-label">
+              Supabase URL
+              <input id="supabase-url" autocomplete="off" placeholder="https://xxxx.supabase.co" readonly />
+            </label>
 
-          <label class="field-label">
-            Publishable anon key
-            <textarea id="supabase-key" rows="4" spellcheck="false"></textarea>
-          </label>
+            <label class="field-label">
+              Publishable anon key
+              <textarea id="supabase-key" rows="3" spellcheck="false" readonly></textarea>
+            </label>
 
-          <label class="field-label">
-            Workspace key
-            <input id="workspace-key" autocomplete="off" />
-          </label>
+            <label class="field-label">
+              Workspace key
+              <input id="workspace-key" autocomplete="off" readonly />
+            </label>
+          </details>
 
           <div id="sync-status" class="sync-status">Облако не подключено.</div>
 
@@ -215,13 +218,21 @@
             <button id="disconnect-sync-button" class="secondary-button" type="button">Отключить</button>
             <button id="pull-sync-button" class="secondary-button" type="button">Загрузить</button>
             <button id="push-sync-button" class="secondary-button" type="button">Выгрузить</button>
-            <button id="save-sync-button" type="submit">Сохранить</button>
+            <button id="save-sync-button" type="submit">Проверить</button>
           </div>
         </form>
       </dialog>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+      window.LIFEHUB_CONFIG = window.LIFEHUB_CONFIG || {
+        supabaseUrl: '',
+        supabaseAnonKey: '',
+        appName: 'LifeHub',
+      };
+    </script>
+    <script src="config.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

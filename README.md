@@ -13,6 +13,7 @@ LifeHub is a mobile-first PWA for organizing home tasks, shopping, family items,
 - Supabase email auth
 - Family invite links
 - Search, edit, delete, and JSON export
+- Capacitor iOS wrapper for App Store builds
 - Local browser storage
 
 ## Run Locally
@@ -52,19 +53,15 @@ For GitHub Pages, publish the repository and enable Pages from the repository se
 1. Create a Supabase project.
 2. Open Supabase SQL Editor.
 3. Run the SQL from `supabase.sql`.
-4. In Supabase Auth settings, add your deployed app URL to allowed redirect URLs.
+4. Copy your Supabase Project URL and publishable anon key into `config.js`.
+5. In Supabase Auth settings, add your deployed app URL to allowed redirect URLs.
    For local testing, add `http://127.0.0.1:8080`.
-5. Open LifeHub.
-6. Click `Локально` in the header.
-7. Paste:
-   - Supabase project URL
-   - publishable anon key
-   - workspace key, or keep the generated one
-8. Click `Сохранить`.
-9. Enter your email and click `Войти по ссылке`.
-10. Click `Выгрузить` to send local data to Supabase.
+6. Open LifeHub.
+7. Click `Локально` in the header.
+8. Enter your email and click `Войти по ссылке`.
+9. Click `Выгрузить` to send local data to Supabase.
 
-After this, new cards are saved to Supabase automatically. Attachments in cloud mode are uploaded to the `lifehub-files` Storage bucket.
+After this, users do not need to configure Supabase themselves. New cards are saved to the configured Supabase project automatically after sign-in. Attachments in cloud mode are uploaded to the `lifehub-files` Storage bucket.
 
 ## Family Invites
 
@@ -75,4 +72,34 @@ After this, new cards are saved to Supabase automatically. Attachments in cloud 
 5. Send the generated link to a family member.
 6. The family member opens the link, signs in, and LifeHub switches them into the same workspace.
 
-Security note: the current setup is MVP-level. It uses Supabase Auth and a workspace invite flow, but the SQL policies are intentionally permissive for easy setup. For production, replace them with strict user-scoped membership policies.
+Security note: `supabase.sql` uses Supabase Auth, workspace membership checks, and an invite RPC. Keep the service-role key out of the client. Only the publishable anon key belongs in `config.js`.
+
+## iOS / App Store
+
+LifeHub is wrapped with Capacitor for iOS.
+
+On Windows you can prepare the web bundle and iOS project:
+
+```powershell
+npm install
+npm run prepare:ios
+npx cap sync ios
+```
+
+The generated Xcode project is in:
+
+```text
+ios/App/App.xcworkspace
+```
+
+Final App Store upload requires macOS with Xcode, an Apple Developer account, signing certificates, app icons, screenshots, privacy details, and App Store Connect metadata.
+
+On a Mac:
+
+```bash
+npm install
+npm run cap:sync
+npx cap open ios
+```
+
+Then archive and upload from Xcode.

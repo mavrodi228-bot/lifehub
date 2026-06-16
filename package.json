@@ -1,0 +1,19 @@
+{
+  "name": "lifehub",
+  "version": "0.2.0",
+  "private": true,
+  "description": "LifeHub mobile-first family organizer PWA",
+  "scripts": {
+    "serve": "python -m http.server 8080 --bind 0.0.0.0",
+    "prepare:ios": "node scripts/prepare-capacitor.mjs",
+    "cap:sync": "npm run prepare:ios && npx cap sync ios",
+    "cap:open:ios": "npm run cap:sync && npx cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "^7.4.4"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.4",
+    "@capacitor/ios": "^7.4.4"
+  }
+}

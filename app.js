@@ -236,7 +236,17 @@ function saveState() {
 
 function loadCloudConfig() {
   try {
+    const productionConfig = window.LIFEHUB_CONFIG || {};
     const saved = localStorage.getItem(cloudConfigKey);
+    const savedConfig = saved ? JSON.parse(saved) : {};
+    const workspaceKey = savedConfig.workspaceKey || makeWorkspaceKey();
+    if (productionConfig.supabaseUrl && productionConfig.supabaseAnonKey) {
+      return {
+        url: productionConfig.supabaseUrl,
+        key: productionConfig.supabaseAnonKey,
+        workspaceKey,
+      };
+    }
     if (!saved) {
       return {
         url: '',
@@ -257,7 +267,9 @@ function makeWorkspaceKey() {
 }
 
 function saveCloudConfigToStorage() {
-  localStorage.setItem(cloudConfigKey, JSON.stringify(cloudConfig));
+  localStorage.setItem(cloudConfigKey, JSON.stringify({
+    workspaceKey: cloudConfig.workspaceKey,
+  }));
 }
 
 function createSupabaseClient() {
@@ -300,7 +312,7 @@ async function addItem() {
     );
 
     state[tab] = [item, ...state[tab]];
-    if (isCloudReady()) {
+    if (isCloudReady() && currentUser) {
       await upsertCloudItem(tab, item);
     }
     input.value = '';
@@ -473,7 +485,7 @@ async function prepareAttachmentForSave() {
 }
 
 async function uploadAttachment(file) {
-  if (!isCloudReady()) throw new Error('Supabase не подключен.');
+  if (!isCloudReady() || !currentUser) throw new Error('Войди в аккаунт перед загрузкой файла.');
 
   const cleanName = file.name.replace(/[^\w.\-а-яА-ЯёЁ]+/g, '-');
   const path = `${cloudConfig.workspaceKey}/${Date.now()}-${cleanName}`;
@@ -502,7 +514,7 @@ function toggleTask(id) {
     task.id === id ? { ...task, done: !task.done } : task,
   );
   const task = state.tasks.find((item) => item.id === id);
-  if (task && isCloudReady()) {
+  if (task && isCloudReady() && currentUser) {
     upsertCloudItem('tasks', task).catch(console.error);
   }
   saveState();
@@ -514,7 +526,7 @@ function deleteItem(id) {
   ['tasks', 'shopping', 'documents', 'family'].forEach((key) => {
     state[key] = state[key].filter((item) => item.id !== id);
   });
-  if (found && isCloudReady()) {
+  if (found && isCloudReady() && currentUser) {
     deleteCloudItem(found.key, found.item).catch(console.error);
   }
   saveState();
@@ -565,50 +577,35 @@ function updateDatePresetState() {
 
 function openSyncDialog() {
   supabaseUrlInput.value = cloudConfig.url || '';
-  supabaseKeyInput.value = cloudConfig.key || '';
+  supabaseKeyInput.value = cloudConfig.key ? `${cloudConfig.key.slice(0, 12)}...` : '';
   workspaceKeyInput.value = cloudConfig.workspaceKey || '';
   inviteLinkInput.value = '';
   updateAuthUI();
-  setSyncStatus(isCloudReady() ? 'Облако подключено. Можно выгружать и загружать данные.' : 'Облако не подключено.');
+  setSyncStatus(supabaseClient ? 'Backend подключен. Войди по email для синхронизации.' : 'Backend не настроен. Заполни config.js перед деплоем.', !supabaseClient);
   syncDialog.showModal();
 }
 
 async function saveCloudConfig(event) {
   event.preventDefault();
-  cloudConfig = {
-    url: supabaseUrlInput.value.trim(),
-    key: supabaseKeyInput.value.trim(),
-    workspaceKey: workspaceKeyInput.value.trim() || makeWorkspaceKey(),
-  };
-  saveCloudConfigToStorage();
   supabaseClient = createSupabaseClient();
   updateCloudBadge();
 
-  if (!isCloudReady()) {
-    setSyncStatus('Заполни Supabase URL и anon key.', true);
+  if (!supabaseClient) {
+    setSyncStatus('Backend не настроен. Добавь Supabase URL и anon key в config.js.', true);
     return;
   }
 
   try {
-    await testCloudConnection();
     await initAuth();
-    setSyncStatus('Подключено. Можно нажать “Выгрузить”, чтобы отправить текущие данные в Supabase.', false, true);
+    setSyncStatus(currentUser ? 'Аккаунт подключен. Можно синхронизировать данные.' : 'Backend подключен. Войди по email для синхронизации.', false, true);
   } catch (error) {
     setSyncStatus(error.message || 'Не получилось подключиться к Supabase.', true);
   }
 }
 
-async function testCloudConnection() {
-  const { error } = await supabaseClient
-    .from('lifehub_items')
-    .select('id', { count: 'exact', head: true })
-    .eq('workspace_key', cloudConfig.workspaceKey);
-  if (error) throw error;
-}
-
 async function pushToCloud() {
-  if (!isCloudReady()) {
-    setSyncStatus('Сначала сохрани Supabase URL и key.', true);
+  if (!isCloudReady() || !currentUser) {
+    setSyncStatus('Сначала войди в аккаунт.', true);
     return;
   }
 
@@ -630,8 +627,8 @@ async function pushToCloud() {
 }
 
 async function pullFromCloud() {
-  if (!isCloudReady()) {
-    setSyncStatus('Сначала сохрани Supabase URL и key.', true);
+  if (!isCloudReady() || !currentUser) {
+    setSyncStatus('Сначала войди в аккаунт.', true);
     return;
   }
 
@@ -663,17 +660,10 @@ function disconnectCloud() {
   if (supabaseClient) {
     supabaseClient.auth.signOut().catch(console.error);
   }
-  cloudConfig = {
-    url: '',
-    key: '',
-    workspaceKey: cloudConfig.workspaceKey || makeWorkspaceKey(),
-  };
-  saveCloudConfigToStorage();
-  supabaseClient = null;
   currentUser = null;
   updateCloudBadge();
   updateAuthUI();
-  setSyncStatus('Облако отключено. LifeHub снова работает локально.');
+  setSyncStatus('Ты вышел из аккаунта. Локальные данные остаются на устройстве.');
 }
 
 function setSyncStatus(message, isError = false, isOk = false) {
@@ -697,13 +687,27 @@ async function initAuth() {
   const { data } = await supabaseClient.auth.getSession();
   currentUser = data.session?.user || null;
   updateAuthUI();
-  await acceptPendingInvite();
+  if (currentUser) {
+    if (pendingInviteToken) {
+      await acceptPendingInvite();
+    } else {
+      await ensureHousehold();
+      await pullFromCloud();
+    }
+  }
 
   const { data: listener } = supabaseClient.auth.onAuthStateChange(async (_event, session) => {
     currentUser = session?.user || null;
     updateAuthUI();
     updateCloudBadge();
-    await acceptPendingInvite();
+    if (currentUser) {
+      if (pendingInviteToken) {
+        await acceptPendingInvite();
+      } else {
+        await ensureHousehold();
+        await pullFromCloud();
+      }
+    }
   });
   authSubscription = listener.subscription;
 }
@@ -823,29 +827,14 @@ async function acceptPendingInvite() {
   if (!pendingInviteToken || !isCloudReady() || !currentUser) return;
 
   try {
-    const { data: invite, error } = await supabaseClient
-      .from('lifehub_invites')
-      .select('*')
-      .eq('token', pendingInviteToken)
-      .maybeSingle();
+    const { data: workspaceKey, error } = await supabaseClient
+      .rpc('accept_lifehub_invite', { invite_token: pendingInviteToken });
     if (error) throw error;
-    if (!invite) throw new Error('Инвайт не найден.');
-    if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
-      throw new Error('Инвайт уже истек.');
-    }
 
-    cloudConfig.workspaceKey = invite.workspace_key;
+    cloudConfig.workspaceKey = workspaceKey;
     workspaceKeyInput.value = cloudConfig.workspaceKey;
     saveCloudConfigToStorage();
     updateCloudBadge();
-
-    const { error: memberError } = await supabaseClient.from('lifehub_members').upsert({
-      workspace_key: invite.workspace_key,
-      user_id: currentUser.id,
-      email: currentUser.email || '',
-      role: 'member',
-    }, { onConflict: 'workspace_key,user_id' });
-    if (memberError) throw memberError;
 
     addFamilyMemberFromAuth(currentUser.email || 'Новый участник');
     await pullFromCloud();
@@ -918,9 +907,9 @@ function handleFileSelection() {
     return;
   }
 
-  const maxSize = isCloudReady() ? 10000000 : 1500000;
+  const maxSize = isCloudReady() && currentUser ? 10000000 : 1500000;
   if (file.size > maxSize) {
-    alert(isCloudReady()
+    alert(isCloudReady() && currentUser
       ? 'Файл слишком большой. Для текущего облачного режима выбери файл до 10 МБ.'
       : 'Файл слишком большой. Для локальной версии выбери фото или PDF до 1.5 МБ.');
     fileInput.value = '';
@@ -928,7 +917,7 @@ function handleFileSelection() {
     return;
   }
 
-  if (isCloudReady()) {
+  if (isCloudReady() && currentUser) {
     selectedAttachment = {
       file,
       name: file.name,
@@ -1043,7 +1032,7 @@ function rowToItem(row) {
 }
 
 async function upsertCloudItem(list, item) {
-  if (!isCloudReady()) return;
+  if (!isCloudReady() || !currentUser) return;
   const { error } = await supabaseClient
     .from('lifehub_items')
     .upsert(itemToRow(list, item), { onConflict: 'workspace_key,id' });
@@ -1051,7 +1040,7 @@ async function upsertCloudItem(list, item) {
 }
 
 async function deleteCloudItem(list, item) {
-  if (!isCloudReady()) return;
+  if (!isCloudReady() || !currentUser) return;
   const { error } = await supabaseClient
     .from('lifehub_items')
     .delete()
@@ -1076,7 +1065,7 @@ function saveDetail(event) {
   state[editingItem.key] = state[editingItem.key].map((item) =>
     item.id === editingItem.item.id ? next : item,
   );
-  if (isCloudReady()) {
+  if (isCloudReady() && currentUser) {
     upsertCloudItem(editingItem.key, next).catch(console.error);
   }
   saveState();
