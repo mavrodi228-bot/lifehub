@@ -100,6 +100,22 @@ h1 {
   box-shadow: 0 4px 0 rgba(34, 38, 31, 0.18);
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ghost-badge {
+  background: #fffdf6;
+  color: #4f574b;
+}
+
+.ghost-badge.connected {
+  background: var(--blue);
+  color: #17334d;
+}
+
 .screen {
   display: none;
 }
@@ -565,13 +581,43 @@ h1 {
 
 .detail-actions {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
 .detail-actions .secondary-button {
   background: #eadfcb;
   color: var(--ink);
+}
+
+.dialog-copy {
+  margin: -4px 0 2px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.42;
+}
+
+.sync-status {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #faf5e8;
+  color: #4f574b;
+  padding: 12px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.sync-status.ok {
+  border-color: #b8d8ff;
+  background: #edf6ff;
+  color: #17334d;
+}
+
+.sync-status.error {
+  border-color: #ffd0bf;
+  background: #fff0ea;
+  color: var(--warn);
 }
 
 .toolbar {

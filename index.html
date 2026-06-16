@@ -18,7 +18,10 @@
           <p class="kicker">LifeHub</p>
           <h1 id="screen-title">Главная</h1>
         </div>
-        <button id="export-button" class="badge" type="button">Экспорт</button>
+        <div class="header-actions">
+          <button id="sync-button" class="badge ghost-badge" type="button">Локально</button>
+          <button id="export-button" class="badge" type="button">Экспорт</button>
+        </div>
       </header>
 
       <section id="home-screen" class="screen active">
@@ -148,8 +151,49 @@
           </div>
         </form>
       </dialog>
+
+      <dialog id="sync-dialog" class="detail-dialog">
+        <form id="sync-form" method="dialog">
+          <div class="detail-head">
+            <div>
+              <p class="kicker">Облако</p>
+              <h2>Supabase</h2>
+            </div>
+            <button id="close-sync-button" class="delete-button" type="button">×</button>
+          </div>
+
+          <p class="dialog-copy">
+            Вставь URL проекта и publishable anon key. После сохранения LifeHub сможет синхронизировать карточки и хранить вложения в Storage.
+          </p>
+
+          <label class="field-label">
+            Supabase URL
+            <input id="supabase-url" autocomplete="off" placeholder="https://xxxx.supabase.co" />
+          </label>
+
+          <label class="field-label">
+            Publishable anon key
+            <textarea id="supabase-key" rows="4" spellcheck="false"></textarea>
+          </label>
+
+          <label class="field-label">
+            Workspace key
+            <input id="workspace-key" autocomplete="off" />
+          </label>
+
+          <div id="sync-status" class="sync-status">Облако не подключено.</div>
+
+          <div class="detail-actions">
+            <button id="disconnect-sync-button" class="secondary-button" type="button">Отключить</button>
+            <button id="pull-sync-button" class="secondary-button" type="button">Загрузить</button>
+            <button id="push-sync-button" class="secondary-button" type="button">Выгрузить</button>
+            <button id="save-sync-button" type="submit">Сохранить</button>
+          </div>
+        </form>
+      </dialog>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="app.js"></script>
   </body>
 </html>

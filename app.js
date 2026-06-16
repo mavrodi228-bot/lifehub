@@ -1,5 +1,7 @@
 const storageKey = 'lifehub-pwa-state-v2';
 const legacyStorageKey = 'lifehub-pwa-state-v1';
+const cloudConfigKey = 'lifehub-supabase-config-v1';
+const storageBucket = 'lifehub-files';
 
 const labels = {
   home: 'Главная',
@@ -67,6 +69,7 @@ const form = document.querySelector('#add-form');
 const tabs = Array.from(document.querySelectorAll('.tab'));
 const clearDoneButton = document.querySelector('#clear-done-button');
 const exportButton = document.querySelector('#export-button');
+const syncButton = document.querySelector('#sync-button');
 const detailDialog = document.querySelector('#detail-dialog');
 const detailForm = document.querySelector('#detail-form');
 const detailHeading = document.querySelector('#detail-heading');
@@ -77,9 +80,21 @@ const detailNote = document.querySelector('#detail-note');
 const attachmentPanel = document.querySelector('#attachment-panel');
 const closeDetailButton = document.querySelector('#close-detail-button');
 const deleteDetailButton = document.querySelector('#delete-detail-button');
+const syncDialog = document.querySelector('#sync-dialog');
+const syncForm = document.querySelector('#sync-form');
+const closeSyncButton = document.querySelector('#close-sync-button');
+const disconnectSyncButton = document.querySelector('#disconnect-sync-button');
+const pullSyncButton = document.querySelector('#pull-sync-button');
+const pushSyncButton = document.querySelector('#push-sync-button');
+const supabaseUrlInput = document.querySelector('#supabase-url');
+const supabaseKeyInput = document.querySelector('#supabase-key');
+const workspaceKeyInput = document.querySelector('#workspace-key');
+const syncStatus = document.querySelector('#sync-status');
 
 let selectedAttachment = null;
 let editingItem = null;
+let cloudConfig = loadCloudConfig();
+let supabaseClient = createSupabaseClient();
 
 form.addEventListener('submit', (event) => {
   event.preventDefault();
@@ -99,6 +114,7 @@ clearDoneButton.addEventListener('click', () => {
 });
 
 exportButton.addEventListener('click', exportData);
+syncButton.addEventListener('click', openSyncDialog);
 fileInput.addEventListener('change', handleFileSelection);
 dateInput.addEventListener('change', updateDatePresetState);
 datePresetButtons.forEach((button) => {
@@ -110,6 +126,11 @@ deleteDetailButton.addEventListener('click', deleteEditingItem);
 detailDialog.addEventListener('close', () => {
   editingItem = null;
 });
+syncForm.addEventListener('submit', saveCloudConfig);
+closeSyncButton.addEventListener('click', () => syncDialog.close());
+disconnectSyncButton.addEventListener('click', disconnectCloud);
+pullSyncButton.addEventListener('click', pullFromCloud);
+pushSyncButton.addEventListener('click', pushToCloud);
 
 tabs.forEach((tab) => {
   tab.addEventListener('click', () => {
@@ -128,6 +149,7 @@ tabs.forEach((tab) => {
   });
 });
 
+updateCloudBadge();
 render();
 
 function createItem(title, category = 'Общее', dueDate = '', note = '', done = false, attachment = null) {
@@ -192,30 +214,84 @@ function saveState() {
   localStorage.setItem(storageKey, JSON.stringify(state));
 }
 
-function addItem() {
+function loadCloudConfig() {
+  try {
+    const saved = localStorage.getItem(cloudConfigKey);
+    if (!saved) {
+      return {
+        url: '',
+        key: '',
+        workspaceKey: makeWorkspaceKey(),
+      };
+    }
+    return JSON.parse(saved);
+  } catch {
+    return { url: '', key: '', workspaceKey: makeWorkspaceKey() };
+  }
+}
+
+function makeWorkspaceKey() {
+  return globalThis.crypto?.randomUUID
+    ? globalThis.crypto.randomUUID()
+    : `workspace-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function saveCloudConfigToStorage() {
+  localStorage.setItem(cloudConfigKey, JSON.stringify(cloudConfig));
+}
+
+function createSupabaseClient() {
+  if (!cloudConfig.url || !cloudConfig.key || !window.supabase?.createClient) return null;
+  return window.supabase.createClient(cloudConfig.url, cloudConfig.key);
+}
+
+function isCloudReady() {
+  return Boolean(supabaseClient && cloudConfig.workspaceKey);
+}
+
+function updateCloudBadge(text) {
+  syncButton.textContent = text || (isCloudReady() ? 'Облако' : 'Локально');
+  syncButton.classList.toggle('connected', isCloudReady());
+}
+
+async function addItem() {
   const tab = state.activeTab;
   const value = input.value.trim();
   if (!value || tab === 'home') return;
+  const submitButton = form.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+  submitButton.textContent = 'Сохраняю...';
+  try {
+    const attachment = tab === 'documents' ? await prepareAttachmentForSave() : null;
 
-  const item = createItem(
-    value,
-    defaultCategory(tab),
-    dateInput.value,
-    noteInput.value.trim(),
-    false,
-    tab === 'documents' ? selectedAttachment : null,
-  );
+    const item = createItem(
+      value,
+      defaultCategory(tab),
+      dateInput.value,
+      noteInput.value.trim(),
+      false,
+      attachment,
+    );
 
-  state[tab] = [item, ...state[tab]];
-  input.value = '';
-  dateInput.value = '';
-  noteInput.value = '';
-  fileInput.value = '';
-  selectedAttachment = null;
-  fileRow.querySelector('span').textContent = 'Прикрепить фото или PDF';
-  updateDatePresetState();
-  saveState();
-  render();
+    state[tab] = [item, ...state[tab]];
+    if (isCloudReady()) {
+      await upsertCloudItem(tab, item);
+    }
+    input.value = '';
+    dateInput.value = '';
+    noteInput.value = '';
+    fileInput.value = '';
+    selectedAttachment = null;
+    fileRow.querySelector('span').textContent = 'Прикрепить фото или PDF';
+    updateDatePresetState();
+    saveState();
+    render();
+  } catch (error) {
+    alert(error.message || 'Не получилось сохранить карточку.');
+  } finally {
+    submitButton.disabled = false;
+    submitButton.textContent = 'Добавить';
+  }
 }
 
 function defaultCategory(tab) {
@@ -363,18 +439,57 @@ function markerText(mode) {
   return 'T';
 }
 
+async function prepareAttachmentForSave() {
+  if (!selectedAttachment) return null;
+  if (!selectedAttachment.file) return selectedAttachment;
+  return uploadAttachment(selectedAttachment.file);
+}
+
+async function uploadAttachment(file) {
+  if (!isCloudReady()) throw new Error('Supabase не подключен.');
+
+  const cleanName = file.name.replace(/[^\w.\-а-яА-ЯёЁ]+/g, '-');
+  const path = `${cloudConfig.workspaceKey}/${Date.now()}-${cleanName}`;
+  const { error } = await supabaseClient.storage
+    .from(storageBucket)
+    .upload(path, file, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: file.type || 'application/octet-stream',
+    });
+
+  if (error) throw error;
+
+  const { data } = supabaseClient.storage.from(storageBucket).getPublicUrl(path);
+  return {
+    name: file.name,
+    type: file.type || 'application/octet-stream',
+    size: file.size,
+    path,
+    url: data.publicUrl,
+  };
+}
+
 function toggleTask(id) {
   state.tasks = state.tasks.map((task) =>
     task.id === id ? { ...task, done: !task.done } : task,
   );
+  const task = state.tasks.find((item) => item.id === id);
+  if (task && isCloudReady()) {
+    upsertCloudItem('tasks', task).catch(console.error);
+  }
   saveState();
   render();
 }
 
 function deleteItem(id) {
+  const found = findItem(id);
   ['tasks', 'shopping', 'documents', 'family'].forEach((key) => {
     state[key] = state[key].filter((item) => item.id !== id);
   });
+  if (found && isCloudReady()) {
+    deleteCloudItem(found.key, found.item).catch(console.error);
+  }
   saveState();
   render();
 }
@@ -421,6 +536,117 @@ function updateDatePresetState() {
   });
 }
 
+function openSyncDialog() {
+  supabaseUrlInput.value = cloudConfig.url || '';
+  supabaseKeyInput.value = cloudConfig.key || '';
+  workspaceKeyInput.value = cloudConfig.workspaceKey || '';
+  setSyncStatus(isCloudReady() ? 'Облако подключено. Можно выгружать и загружать данные.' : 'Облако не подключено.');
+  syncDialog.showModal();
+}
+
+async function saveCloudConfig(event) {
+  event.preventDefault();
+  cloudConfig = {
+    url: supabaseUrlInput.value.trim(),
+    key: supabaseKeyInput.value.trim(),
+    workspaceKey: workspaceKeyInput.value.trim() || makeWorkspaceKey(),
+  };
+  saveCloudConfigToStorage();
+  supabaseClient = createSupabaseClient();
+  updateCloudBadge();
+
+  if (!isCloudReady()) {
+    setSyncStatus('Заполни Supabase URL и anon key.', true);
+    return;
+  }
+
+  try {
+    await testCloudConnection();
+    setSyncStatus('Подключено. Можно нажать “Выгрузить”, чтобы отправить текущие данные в Supabase.', false, true);
+  } catch (error) {
+    setSyncStatus(error.message || 'Не получилось подключиться к Supabase.', true);
+  }
+}
+
+async function testCloudConnection() {
+  const { error } = await supabaseClient
+    .from('lifehub_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('workspace_key', cloudConfig.workspaceKey);
+  if (error) throw error;
+}
+
+async function pushToCloud() {
+  if (!isCloudReady()) {
+    setSyncStatus('Сначала сохрани Supabase URL и key.', true);
+    return;
+  }
+
+  setSyncStatus('Выгружаю локальные карточки...');
+  try {
+    const rows = ['tasks', 'shopping', 'documents', 'family'].flatMap((list) =>
+      state[list].map((item) => itemToRow(list, item)),
+    );
+    if (rows.length) {
+      const { error } = await supabaseClient
+        .from('lifehub_items')
+        .upsert(rows, { onConflict: 'workspace_key,id' });
+      if (error) throw error;
+    }
+    setSyncStatus(`Готово: выгружено ${rows.length} карточек.`, false, true);
+  } catch (error) {
+    setSyncStatus(error.message || 'Выгрузка не удалась.', true);
+  }
+}
+
+async function pullFromCloud() {
+  if (!isCloudReady()) {
+    setSyncStatus('Сначала сохрани Supabase URL и key.', true);
+    return;
+  }
+
+  setSyncStatus('Загружаю данные из Supabase...');
+  try {
+    const { data, error } = await supabaseClient
+      .from('lifehub_items')
+      .select('*')
+      .eq('workspace_key', cloudConfig.workspaceKey)
+      .order('updated_at', { ascending: false });
+    if (error) throw error;
+
+    state.tasks = [];
+    state.shopping = [];
+    state.documents = [];
+    state.family = [];
+    data.forEach((row) => {
+      if (state[row.list]) state[row.list].push(rowToItem(row));
+    });
+    saveState();
+    render();
+    setSyncStatus(`Готово: загружено ${data.length} карточек.`, false, true);
+  } catch (error) {
+    setSyncStatus(error.message || 'Загрузка не удалась.', true);
+  }
+}
+
+function disconnectCloud() {
+  cloudConfig = {
+    url: '',
+    key: '',
+    workspaceKey: cloudConfig.workspaceKey || makeWorkspaceKey(),
+  };
+  saveCloudConfigToStorage();
+  supabaseClient = null;
+  updateCloudBadge();
+  setSyncStatus('Облако отключено. LifeHub снова работает локально.');
+}
+
+function setSyncStatus(message, isError = false, isOk = false) {
+  syncStatus.textContent = message;
+  syncStatus.classList.toggle('error', isError);
+  syncStatus.classList.toggle('ok', isOk);
+}
+
 function daysUntil(value) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -459,10 +685,24 @@ function handleFileSelection() {
     return;
   }
 
-  if (file.size > 1500000) {
-    alert('Файл слишком большой. Для локальной версии выбери фото или PDF до 1.5 МБ.');
+  const maxSize = isCloudReady() ? 10000000 : 1500000;
+  if (file.size > maxSize) {
+    alert(isCloudReady()
+      ? 'Файл слишком большой. Для текущего облачного режима выбери файл до 10 МБ.'
+      : 'Файл слишком большой. Для локальной версии выбери фото или PDF до 1.5 МБ.');
     fileInput.value = '';
     selectedAttachment = null;
+    return;
+  }
+
+  if (isCloudReady()) {
+    selectedAttachment = {
+      file,
+      name: file.name,
+      type: file.type || 'application/octet-stream',
+      size: file.size,
+    };
+    fileRow.querySelector('span').textContent = `Прикреплено: ${file.name}`;
     return;
   }
 
@@ -514,7 +754,7 @@ function renderAttachmentPanel(attachment) {
 
   if (attachment.type.startsWith('image/')) {
     const image = document.createElement('img');
-    image.src = attachment.dataUrl;
+    image.src = attachment.url || attachment.dataUrl;
     image.alt = attachment.name;
     preview.appendChild(image);
   } else {
@@ -526,7 +766,7 @@ function renderAttachmentPanel(attachment) {
 
   const info = document.createElement('div');
   const link = document.createElement('a');
-  link.href = attachment.dataUrl;
+  link.href = attachment.url || attachment.dataUrl;
   link.target = '_blank';
   link.rel = 'noreferrer';
   link.textContent = attachment.name;
@@ -538,6 +778,54 @@ function renderAttachmentPanel(attachment) {
   info.append(link, meta);
   preview.appendChild(info);
   attachmentPanel.appendChild(preview);
+}
+
+function itemToRow(list, item) {
+  return {
+    id: String(item.id),
+    workspace_key: cloudConfig.workspaceKey,
+    list,
+    title: item.title,
+    category: item.category,
+    due_date: item.dueDate || null,
+    note: item.note || '',
+    done: Boolean(item.done),
+    attachment: item.attachment || null,
+    created_at: item.createdAt || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function rowToItem(row) {
+  return {
+    id: Number(row.id) || row.id,
+    title: row.title,
+    category: row.category || 'Общее',
+    dueDate: row.due_date || '',
+    note: row.note || '',
+    done: Boolean(row.done),
+    attachment: row.attachment || null,
+    createdAt: row.created_at || new Date().toISOString(),
+  };
+}
+
+async function upsertCloudItem(list, item) {
+  if (!isCloudReady()) return;
+  const { error } = await supabaseClient
+    .from('lifehub_items')
+    .upsert(itemToRow(list, item), { onConflict: 'workspace_key,id' });
+  if (error) throw error;
+}
+
+async function deleteCloudItem(list, item) {
+  if (!isCloudReady()) return;
+  const { error } = await supabaseClient
+    .from('lifehub_items')
+    .delete()
+    .eq('workspace_key', cloudConfig.workspaceKey)
+    .eq('list', list)
+    .eq('id', String(item.id));
+  if (error) throw error;
 }
 
 function saveDetail(event) {
@@ -555,6 +843,9 @@ function saveDetail(event) {
   state[editingItem.key] = state[editingItem.key].map((item) =>
     item.id === editingItem.item.id ? next : item,
   );
+  if (isCloudReady()) {
+    upsertCloudItem(editingItem.key, next).catch(console.error);
+  }
   saveState();
   detailDialog.close();
   editingItem = null;
