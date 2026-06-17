@@ -57,9 +57,9 @@ For GitHub Pages, publish the repository and enable Pages from the repository se
 5. In Supabase Auth settings, add your deployed app URL to allowed redirect URLs.
    For local testing, add `http://127.0.0.1:8080`.
 6. Open LifeHub.
-7. Click `Локально` in the header.
-8. Enter your email and click `Войти по ссылке`.
-9. Click `Выгрузить` to send local data to Supabase.
+7. Enter your email in the first-screen sign-in panel.
+8. Open the magic link from email.
+9. LifeHub will create or join the family workspace and sync data automatically.
 
 After this, users do not need to configure Supabase themselves. New cards are saved to the configured Supabase project automatically after sign-in. Attachments in cloud mode are uploaded to the `lifehub-files` Storage bucket.
 
@@ -73,6 +73,24 @@ After this, users do not need to configure Supabase themselves. New cards are sa
 6. The family member opens the link, signs in, and LifeHub switches them into the same workspace.
 
 Security note: `supabase.sql` uses Supabase Auth, workspace membership checks, and an invite RPC. Keep the service-role key out of the client. Only the publishable anon key belongs in `config.js`.
+
+## Branded Auth Email
+
+To send registration/login emails from your company instead of the default Supabase sender:
+
+1. Buy or use a domain you control.
+2. Create an email sending account with a provider such as Resend, Postmark, SendGrid, Brevo, Mailgun, or Amazon SES.
+3. Verify the domain in that provider by adding the DNS records they give you, usually SPF, DKIM, and DMARC.
+4. In Supabase, open `Authentication -> Emails`.
+5. Configure custom SMTP with the provider's SMTP host, port, username, password, sender email, and sender name.
+6. In the Magic Link email template, paste `email-templates/magic-link.html`.
+7. Set the email subject to something like `Вход в LifeHub`.
+
+Use a sender like:
+
+```text
+LifeHub <no-reply@yourdomain.com>
+```
 
 ## iOS / App Store
 

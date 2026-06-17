@@ -71,6 +71,11 @@ const clearDoneButton = document.querySelector('#clear-done-button');
 const inviteFamilyButton = document.querySelector('#invite-family-button');
 const exportButton = document.querySelector('#export-button');
 const syncButton = document.querySelector('#sync-button');
+const authGate = document.querySelector('#auth-gate');
+const gateAuthForm = document.querySelector('#gate-auth-form');
+const gateAuthEmail = document.querySelector('#gate-auth-email');
+const gateAuthCopy = document.querySelector('#gate-auth-copy');
+const gateLoginButton = document.querySelector('#gate-login-button');
 const detailDialog = document.querySelector('#detail-dialog');
 const detailForm = document.querySelector('#detail-form');
 const detailHeading = document.querySelector('#detail-heading');
@@ -126,6 +131,11 @@ clearDoneButton.addEventListener('click', () => {
 
 exportButton.addEventListener('click', exportData);
 syncButton.addEventListener('click', openSyncDialog);
+gateAuthForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  authEmailInput.value = gateAuthEmail.value;
+  sendMagicLink();
+});
 inviteFamilyButton.addEventListener('click', () => {
   openSyncDialog();
   inviteLinkInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -288,8 +298,8 @@ function isCloudReady() {
 }
 
 function updateCloudBadge(text) {
-  syncButton.textContent = text || (isCloudReady() ? (currentUser ? 'Семья' : 'Облако') : 'Локально');
-  syncButton.classList.toggle('connected', isCloudReady());
+  syncButton.textContent = text || (currentUser ? 'Семья' : 'Войти');
+  syncButton.classList.toggle('connected', Boolean(currentUser));
 }
 
 async function addItem() {
@@ -581,7 +591,7 @@ function openSyncDialog() {
   workspaceKeyInput.value = cloudConfig.workspaceKey || '';
   inviteLinkInput.value = '';
   updateAuthUI();
-  setSyncStatus(supabaseClient ? 'Backend подключен. Войди по email для синхронизации.' : 'Backend не настроен. Заполни config.js перед деплоем.', !supabaseClient);
+  setSyncStatus(supabaseClient ? 'Войди по email, чтобы включить семейную синхронизацию.' : 'Приложение еще не подключено к серверу.', !supabaseClient);
   syncDialog.showModal();
 }
 
@@ -591,15 +601,15 @@ async function saveCloudConfig(event) {
   updateCloudBadge();
 
   if (!supabaseClient) {
-    setSyncStatus('Backend не настроен. Добавь Supabase URL и anon key в config.js.', true);
+    setSyncStatus('Приложение еще не подключено к серверу.', true);
     return;
   }
 
   try {
     await initAuth();
-    setSyncStatus(currentUser ? 'Аккаунт подключен. Можно синхронизировать данные.' : 'Backend подключен. Войди по email для синхронизации.', false, true);
+    setSyncStatus(currentUser ? 'Аккаунт подключен. Семейные дела синхронизируются.' : 'Войди по email, чтобы включить семейную синхронизацию.', false, true);
   } catch (error) {
-    setSyncStatus(error.message || 'Не получилось подключиться к Supabase.', true);
+    setSyncStatus(error.message || 'Не получилось подключиться к аккаунту.', true);
   }
 }
 
@@ -611,15 +621,7 @@ async function pushToCloud() {
 
   setSyncStatus('Выгружаю локальные карточки...');
   try {
-    const rows = ['tasks', 'shopping', 'documents', 'family'].flatMap((list) =>
-      state[list].map((item) => itemToRow(list, item)),
-    );
-    if (rows.length) {
-      const { error } = await supabaseClient
-        .from('lifehub_items')
-        .upsert(rows, { onConflict: 'workspace_key,id' });
-      if (error) throw error;
-    }
+    const rows = await pushStateToCloud();
     setSyncStatus(`Готово: выгружено ${rows.length} карточек.`, false, true);
   } catch (error) {
     setSyncStatus(error.message || 'Выгрузка не удалась.', true);
@@ -632,28 +634,58 @@ async function pullFromCloud() {
     return;
   }
 
-  setSyncStatus('Загружаю данные из Supabase...');
+  setSyncStatus('Обновляю семейные данные...');
   try {
-    const { data, error } = await supabaseClient
-      .from('lifehub_items')
-      .select('*')
-      .eq('workspace_key', cloudConfig.workspaceKey)
-      .order('updated_at', { ascending: false });
-    if (error) throw error;
-
-    state.tasks = [];
-    state.shopping = [];
-    state.documents = [];
-    state.family = [];
-    data.forEach((row) => {
-      if (state[row.list]) state[row.list].push(rowToItem(row));
-    });
-    saveState();
-    render();
+    const data = await loadStateFromCloud();
+    if (!data.length) {
+      setSyncStatus('В облаке пока нет карточек. Локальные данные оставлены на месте.', false, true);
+      return;
+    }
     setSyncStatus(`Готово: загружено ${data.length} карточек.`, false, true);
   } catch (error) {
     setSyncStatus(error.message || 'Загрузка не удалась.', true);
   }
+}
+
+async function syncAfterLogin() {
+  await ensureHousehold();
+  await pushStateToCloud();
+  await loadStateFromCloud();
+  setSyncStatus('Аккаунт подключен. Семейные дела синхронизированы.', false, true);
+}
+
+async function pushStateToCloud() {
+  const rows = ['tasks', 'shopping', 'documents', 'family'].flatMap((list) =>
+    state[list].map((item) => itemToRow(list, item)),
+  );
+  if (rows.length) {
+    const { error } = await supabaseClient
+      .from('lifehub_items')
+      .upsert(rows, { onConflict: 'workspace_key,id' });
+    if (error) throw error;
+  }
+  return rows;
+}
+
+async function loadStateFromCloud() {
+  const { data, error } = await supabaseClient
+    .from('lifehub_items')
+    .select('*')
+    .eq('workspace_key', cloudConfig.workspaceKey)
+    .order('updated_at', { ascending: false });
+  if (error) throw error;
+  if (!data.length) return data;
+
+  state.tasks = [];
+  state.shopping = [];
+  state.documents = [];
+  state.family = [];
+  data.forEach((row) => {
+    if (state[row.list]) state[row.list].push(rowToItem(row));
+  });
+  saveState();
+  render();
+  return data;
 }
 
 function disconnectCloud() {
@@ -691,8 +723,7 @@ async function initAuth() {
     if (pendingInviteToken) {
       await acceptPendingInvite();
     } else {
-      await ensureHousehold();
-      await pullFromCloud();
+      await syncAfterLogin();
     }
   }
 
@@ -704,8 +735,7 @@ async function initAuth() {
       if (pendingInviteToken) {
         await acceptPendingInvite();
       } else {
-        await ensureHousehold();
-        await pullFromCloud();
+        await syncAfterLogin();
       }
     }
   });
@@ -715,14 +745,22 @@ async function initAuth() {
 function updateAuthUI() {
   if (!authStatus) return;
   if (!isCloudReady()) {
-    authStatus.textContent = 'Сначала подключи Supabase URL и anon key.';
+    authGate.classList.add('visible');
+    gateAuthCopy.textContent = 'Приложение еще не подключено к серверу. Сообщи владельцу LifeHub.';
+    authStatus.textContent = 'Приложение еще не подключено к серверу.';
     sendLoginButton.disabled = true;
+    gateLoginButton.disabled = true;
     signOutButton.disabled = true;
     createInviteButton.disabled = true;
     copyInviteButton.disabled = true;
     return;
   }
 
+  authGate.classList.toggle('visible', !currentUser);
+  gateLoginButton.disabled = Boolean(currentUser);
+  gateAuthCopy.textContent = pendingInviteToken
+    ? 'Войди по email, чтобы принять приглашение в семью.'
+    : 'Мы отправим ссылку на email. Пароль не нужен.';
   sendLoginButton.disabled = false;
   signOutButton.disabled = !currentUser;
   createInviteButton.disabled = !currentUser;
@@ -734,15 +772,17 @@ function updateAuthUI() {
 
 async function sendMagicLink() {
   if (!isCloudReady()) {
-    setSyncStatus('Сначала сохрани Supabase URL и key.', true);
+    setSyncStatus('Приложение еще не подключено к серверу.', true);
     return;
   }
 
-  const email = authEmailInput.value.trim();
+  const email = (authEmailInput.value || gateAuthEmail.value).trim();
   if (!email) {
     setSyncStatus('Введи email для входа.', true);
     return;
   }
+  authEmailInput.value = email;
+  gateAuthEmail.value = email;
 
   const { error } = await supabaseClient.auth.signInWithOtp({
     email,
@@ -757,6 +797,7 @@ async function sendMagicLink() {
   }
 
   setSyncStatus('Отправил ссылку для входа на email. Открой ее на этом устройстве.', false, true);
+  gateAuthCopy.textContent = 'Ссылка отправлена. Проверь почту и открой письмо на этом устройстве.';
 }
 
 async function signOut() {
@@ -770,7 +811,7 @@ async function signOut() {
 
 async function createInviteLink() {
   if (!isCloudReady()) {
-    setSyncStatus('Сначала подключи облако.', true);
+    setSyncStatus('Сначала войди в аккаунт.', true);
     return;
   }
   if (!currentUser) {
@@ -780,6 +821,7 @@ async function createInviteLink() {
 
   try {
     await ensureHousehold();
+    await pushStateToCloud();
     const token = makeInviteToken();
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 14);
@@ -836,8 +878,9 @@ async function acceptPendingInvite() {
     saveCloudConfigToStorage();
     updateCloudBadge();
 
-    addFamilyMemberFromAuth(currentUser.email || 'Новый участник');
-    await pullFromCloud();
+    await loadStateFromCloud();
+    const memberItem = addFamilyMemberFromAuth(currentUser.email || 'Новый участник');
+    if (memberItem) await upsertCloudItem('family', memberItem);
     pendingInviteToken = '';
     window.history.replaceState({}, document.title, window.location.pathname);
     setSyncStatus('Инвайт принят. Ты добавлен в семью.', false, true);
@@ -847,12 +890,15 @@ async function acceptPendingInvite() {
 }
 
 function addFamilyMemberFromAuth(email) {
-  if (state.family.some((item) => item.title === email)) return;
+  if (state.family.some((item) => item.title === email)) return null;
+  const item = createItem(email, 'Участник', '', 'Добавлен по инвайт-ссылке');
   state.family = [
-    createItem(email, 'Участник', '', 'Добавлен по инвайт-ссылке'),
+    item,
     ...state.family,
   ];
   saveState();
+  render();
+  return item;
 }
 
 function getInviteTokenFromUrl() {

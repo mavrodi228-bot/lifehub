@@ -19,12 +19,24 @@
           <h1 id="screen-title">Главная</h1>
         </div>
         <div class="header-actions">
-          <button id="sync-button" class="badge ghost-badge" type="button">Локально</button>
+          <button id="sync-button" class="badge ghost-badge" type="button">Войти</button>
           <button id="export-button" class="badge" type="button">Экспорт</button>
         </div>
       </header>
 
       <section id="home-screen" class="screen active">
+        <section id="auth-gate" class="auth-gate">
+          <div>
+            <span class="hero-label">Аккаунт LifeHub</span>
+            <h2>Войди, чтобы семья видела общие дела.</h2>
+            <p id="gate-auth-copy">Мы отправим ссылку на email. Пароль не нужен.</p>
+          </div>
+          <form id="gate-auth-form" class="gate-auth-form">
+            <input id="gate-auth-email" type="email" autocomplete="email" placeholder="you@example.com" />
+            <button id="gate-login-button" type="submit">Получить ссылку</button>
+          </form>
+        </section>
+
         <section class="hero">
           <div>
             <span class="hero-label">Домашний пульт</span>
@@ -157,7 +169,7 @@
         <form id="sync-form" method="dialog">
           <div class="detail-head">
             <div>
-              <p class="kicker">Облако</p>
+              <p class="kicker">LifeHub</p>
               <h2>Аккаунт</h2>
             </div>
             <button id="close-sync-button" class="delete-button" type="button">×</button>
@@ -167,25 +179,11 @@
             Войди по email, чтобы LifeHub синхронизировал данные в облаке и подключал членов семьи по ссылке.
           </p>
 
-          <details class="developer-settings">
-            <summary>Настройка backend</summary>
-            <label class="field-label">
-              Supabase URL
-              <input id="supabase-url" autocomplete="off" placeholder="https://xxxx.supabase.co" readonly />
-            </label>
+          <input id="supabase-url" type="hidden" />
+          <textarea id="supabase-key" hidden></textarea>
+          <input id="workspace-key" type="hidden" />
 
-            <label class="field-label">
-              Publishable anon key
-              <textarea id="supabase-key" rows="3" spellcheck="false" readonly></textarea>
-            </label>
-
-            <label class="field-label">
-              Workspace key
-              <input id="workspace-key" autocomplete="off" readonly />
-            </label>
-          </details>
-
-          <div id="sync-status" class="sync-status">Облако не подключено.</div>
+          <div id="sync-status" class="sync-status">Аккаунт не подключен.</div>
 
           <section class="auth-panel">
             <div>
@@ -215,9 +213,9 @@
           </section>
 
           <div class="detail-actions">
-            <button id="disconnect-sync-button" class="secondary-button" type="button">Отключить</button>
-            <button id="pull-sync-button" class="secondary-button" type="button">Загрузить</button>
-            <button id="push-sync-button" class="secondary-button" type="button">Выгрузить</button>
+            <button id="disconnect-sync-button" class="secondary-button" type="button">Выйти</button>
+            <button id="pull-sync-button" class="secondary-button" type="button">Обновить</button>
+            <button id="push-sync-button" class="secondary-button" type="button">Сохранить</button>
             <button id="save-sync-button" type="submit">Проверить</button>
           </div>
         </form>

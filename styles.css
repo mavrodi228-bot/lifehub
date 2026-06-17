@@ -137,6 +137,67 @@ h1 {
   box-shadow: var(--shadow);
 }
 
+.auth-gate {
+  display: none;
+  gap: 16px;
+  margin: 4px 0 14px;
+  border: 1px solid #d5cbb9;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(184, 216, 255, 0.62), rgba(255, 253, 246, 0.94)),
+    var(--panel);
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+
+.auth-gate.visible {
+  display: grid;
+}
+
+.auth-gate h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 25px;
+  line-height: 1.08;
+}
+
+.auth-gate p {
+  margin: 10px 0 0;
+  color: #4f574b;
+  font-size: 14px;
+  line-height: 1.42;
+}
+
+.gate-auth-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.gate-auth-form input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  outline: 0;
+  background: #fffaf0;
+  color: var(--ink);
+  font-size: 16px;
+  padding: 13px 12px;
+}
+
+.gate-auth-form button {
+  min-height: 46px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--dark);
+  color: #fff9ea;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 900;
+  box-shadow: 0 4px 0 rgba(34, 38, 31, 0.16);
+}
+
 .hero-label {
   display: inline-flex;
   margin-bottom: 10px;
@@ -772,7 +833,8 @@ h1 {
   }
 
   .auth-actions,
-  .invite-box {
+  .invite-box,
+  .gate-auth-form {
     grid-template-columns: 1fr;
   }
 }
