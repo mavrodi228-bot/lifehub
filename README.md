@@ -12,6 +12,9 @@ LifeHub is a mobile-first PWA for organizing home tasks, shopping, family items,
 - Family/shared responsibility list
 - Supabase email auth
 - Family invite links
+- Full-screen invite onboarding
+- In-app and browser reminders for nearby due dates
+- Invite acceptance notifications for the invite creator
 - Search, edit, delete, and JSON export
 - Capacitor iOS wrapper for App Store builds
 - Local browser storage
@@ -63,6 +66,8 @@ For GitHub Pages, publish the repository and enable Pages from the repository se
 
 After this, users do not need to configure Supabase themselves. New cards are saved to the configured Supabase project automatically after sign-in. Attachments in cloud mode are uploaded to the `lifehub-files` Storage bucket.
 
+If you already created the Supabase project earlier, run the current `supabase.sql` again. It adds the notification table and updates the invite RPC so accepted invites create a family member card automatically.
+
 ## Family Invites
 
 1. Connect Supabase and sign in by email.
@@ -70,7 +75,8 @@ After this, users do not need to configure Supabase themselves. New cards are sa
 3. Click `Инвайт`.
 4. Click `Создать`.
 5. Send the generated link to a family member.
-6. The family member opens the link, signs in, and LifeHub switches them into the same workspace.
+6. The family member opens the link, sees a full-screen join screen, signs in, and LifeHub switches them into the same workspace.
+7. The creator of the invite receives a LifeHub notification, and the new person appears in the family list.
 
 Security note: `supabase.sql` uses Supabase Auth, workspace membership checks, and an invite RPC. Keep the service-role key out of the client. Only the publishable anon key belongs in `config.js`.
 

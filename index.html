@@ -12,6 +12,20 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <section id="invite-screen" class="invite-screen" aria-live="polite">
+      <div class="invite-card">
+        <span class="hero-label">Приглашение LifeHub</span>
+        <h1>Тебя пригласили в семейное пространство</h1>
+        <p id="invite-copy">Войди по email, и LifeHub сразу подключит тебя к общим делам, покупкам и документам семьи.</p>
+        <form id="invite-auth-form" class="gate-auth-form">
+          <input id="invite-auth-email" type="email" autocomplete="email" placeholder="you@example.com" />
+          <button id="invite-login-button" type="submit">Присоединиться</button>
+        </form>
+      </div>
+    </section>
+
+    <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+
     <main class="app-shell">
       <header class="topbar">
         <div>
@@ -176,7 +190,7 @@
           </div>
 
           <p class="dialog-copy">
-            Войди по email, чтобы LifeHub синхронизировал данные в облаке и подключал членов семьи по ссылке.
+            Войди по email, чтобы LifeHub сохранял дела и подключал членов семьи по ссылке.
           </p>
 
           <input id="supabase-url" type="hidden" />
@@ -190,7 +204,7 @@
               <p class="kicker">Аккаунт</p>
               <p id="auth-status" class="dialog-copy">Войди по email, чтобы семья могла подключаться по ссылке.</p>
             </div>
-            <label class="field-label">
+            <label id="auth-email-row" class="field-label">
               Email
               <input id="auth-email" type="email" autocomplete="email" placeholder="you@example.com" />
             </label>
@@ -200,7 +214,7 @@
             </div>
           </section>
 
-          <section class="auth-panel">
+          <section id="invite-panel" class="auth-panel">
             <div>
               <p class="kicker">Семья</p>
               <p class="dialog-copy">Создай ссылку и отправь ее человеку. После входа он станет участником этого пространства.</p>
@@ -212,12 +226,10 @@
             </div>
           </section>
 
-          <div class="detail-actions">
-            <button id="disconnect-sync-button" class="secondary-button" type="button">Выйти</button>
-            <button id="pull-sync-button" class="secondary-button" type="button">Обновить</button>
-            <button id="push-sync-button" class="secondary-button" type="button">Сохранить</button>
-            <button id="save-sync-button" type="submit">Проверить</button>
-          </div>
+          <button id="disconnect-sync-button" class="secondary-button hidden-control" type="button">Выйти</button>
+          <button id="pull-sync-button" class="secondary-button hidden-control" type="button">Обновить</button>
+          <button id="push-sync-button" class="secondary-button hidden-control" type="button">Сохранить</button>
+          <button id="save-sync-button" class="hidden-control" type="submit">Проверить</button>
         </form>
       </dialog>
     </main>
