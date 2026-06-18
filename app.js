@@ -3,7 +3,17 @@ const legacyStorageKey = 'lifehub-pwa-state-v1';
 const cloudConfigKey = 'lifehub-supabase-config-v1';
 const storageBucket = 'lifehub-files';
 const reminderSeenKey = 'lifehub-reminder-seen-v1';
+const profileKey = 'lifehub-profile-v1';
 const serviceWorkerPath = 'sw.js';
+
+const avatarOptions = [
+  { id: 'lime', symbol: '◆', color: '#daff72' },
+  { id: 'sky', symbol: '●', color: '#b8d8ff' },
+  { id: 'coral', symbol: '✦', color: '#ffb199' },
+  { id: 'mint', symbol: '▲', color: '#a9f0d1' },
+  { id: 'sun', symbol: '■', color: '#ffe08a' },
+  { id: 'rose', symbol: '✚', color: '#ffc6de' },
+];
 
 const labels = {
   home: 'Главная',
@@ -80,6 +90,9 @@ const accessCopy = document.querySelector('#access-copy');
 const accessModeTabs = document.querySelector('#access-mode-tabs');
 const accessModeButtons = Array.from(document.querySelectorAll('[data-auth-mode]'));
 const accessAuthForm = document.querySelector('#access-auth-form');
+const accessNameRow = document.querySelector('#access-name-row');
+const accessProfileName = document.querySelector('#access-profile-name');
+const avatarPicker = document.querySelector('#avatar-picker');
 const accessAuthEmail = document.querySelector('#access-auth-email');
 const accessSubmitButton = document.querySelector('#access-submit-button');
 const accessHelper = document.querySelector('#access-helper');
@@ -117,6 +130,8 @@ const inviteLinkInput = document.querySelector('#invite-link');
 
 let selectedAttachment = null;
 let editingItem = null;
+let localProfile = loadProfile();
+let selectedAvatar = localProfile.avatar || randomAvatarId();
 let cloudConfig = loadCloudConfig();
 let supabaseClient = createSupabaseClient();
 let currentUser = null;
@@ -146,7 +161,9 @@ clearDoneButton.addEventListener('click', () => {
   render();
 });
 
-exportButton.addEventListener('click', exportData);
+if (exportButton) {
+  exportButton.addEventListener('click', exportData);
+}
 syncButton.addEventListener('click', openSyncDialog);
 accessAuthForm.addEventListener('submit', (event) => {
   event.preventDefault();
@@ -156,6 +173,9 @@ accessAuthForm.addEventListener('submit', (event) => {
 accessModeButtons.forEach((button) => {
   button.addEventListener('click', () => {
     authMode = button.dataset.authMode || 'login';
+    if (authMode === 'signup' && !accessProfileName.value.trim()) {
+      accessProfileName.value = localProfile.name || '';
+    }
     updateAuthUI();
   });
 });
@@ -202,11 +222,12 @@ tabs.forEach((tab) => {
 });
 
 updateCloudBadge();
+renderAvatarPicker();
 render();
 registerServiceWorker();
 initAuth();
 
-function createItem(title, category = 'Общее', dueDate = '', note = '', done = false, attachment = null) {
+function createItem(title, category = 'Общее', dueDate = '', note = '', done = false, attachment = null, avatar = '') {
   return {
     id: Date.now() + Math.floor(Math.random() * 100000),
     title,
@@ -215,6 +236,7 @@ function createItem(title, category = 'Общее', dueDate = '', note = '', don
     note,
     done,
     attachment,
+    avatar,
     createdAt: new Date().toISOString(),
   };
 }
@@ -250,6 +272,7 @@ function normalizeList(items, fallback) {
     note: item.note || noteFromMeta(item.meta),
     done: Boolean(item.done),
     attachment: item.attachment || null,
+    avatar: item.avatar || '',
     createdAt: item.createdAt || new Date().toISOString(),
   }));
 }
@@ -266,6 +289,73 @@ function noteFromMeta(meta = '') {
 
 function saveState() {
   localStorage.setItem(storageKey, JSON.stringify(state));
+}
+
+function loadProfile() {
+  try {
+    return JSON.parse(localStorage.getItem(profileKey) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function saveProfile(profile) {
+  localStorage.setItem(profileKey, JSON.stringify(profile));
+  localProfile = profile;
+}
+
+function randomAvatarId(seed = '') {
+  if (seed) {
+    const sum = [...seed].reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return avatarOptions[sum % avatarOptions.length].id;
+  }
+  return avatarOptions[Math.floor(Math.random() * avatarOptions.length)].id;
+}
+
+function getAvatarById(id) {
+  return avatarOptions.find((avatar) => avatar.id === id) || avatarOptions[0];
+}
+
+function renderAvatarPicker() {
+  if (!avatarPicker) return;
+  avatarPicker.innerHTML = '';
+  avatarOptions.forEach((avatar) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'avatar-option';
+    button.dataset.avatar = avatar.id;
+    button.style.setProperty('--avatar-color', avatar.color);
+    button.textContent = avatar.symbol;
+    button.classList.toggle('active', avatar.id === selectedAvatar);
+    button.addEventListener('click', () => {
+      selectedAvatar = avatar.id;
+      renderAvatarPicker();
+    });
+    avatarPicker.appendChild(button);
+  });
+}
+
+function collectAccessProfile(email) {
+  const fallbackName = email ? email.split('@')[0] : 'Участник';
+  const name = accessProfileName.value.trim() || localProfile.name || fallbackName;
+  const avatar = selectedAvatar || localProfile.avatar || randomAvatarId(name || email);
+  const profile = { name, avatar };
+  saveProfile(profile);
+  return profile;
+}
+
+function currentUserProfile() {
+  const metadata = currentUser?.user_metadata || {};
+  const emailName = currentUser?.email ? currentUser.email.split('@')[0] : '';
+  const name = localProfile.name || metadata.display_name || metadata.name || emailName || 'Участник';
+  const avatar = localProfile.avatar || metadata.avatar || randomAvatarId(name || currentUser?.email || '');
+  return { name, avatar };
+}
+
+function avatarLabel(avatarId, name = '') {
+  const avatar = getAvatarById(avatarId);
+  const initial = name.trim().slice(0, 1).toUpperCase();
+  return initial || avatar.symbol;
 }
 
 function loadCloudConfig() {
@@ -348,6 +438,9 @@ async function addItem() {
     state[tab] = [item, ...state[tab]];
     if (isCloudReady() && currentUser) {
       await upsertCloudItem(tab, item);
+      if (tab !== 'family') {
+        notifyHouseholdItemAdded(tab, item).catch(console.error);
+      }
     }
     input.value = '';
     dateInput.value = '';
@@ -400,8 +493,8 @@ function render() {
 
 function renderHome() {
   const activeTasks = state.tasks.filter((item) => !item.done);
-  const soonItems = allItems().filter((item) => !item.done && item.dueDate && daysUntil(item.dueDate) <= 14);
-  const focus = allItems()
+  const soonItems = allActionItems().filter((item) => !item.done && item.dueDate && daysUntil(item.dueDate) <= 14);
+  const focus = allActionItems()
     .filter((item) => !item.done)
     .sort(compareByDueDate)
     .slice(0, 5);
@@ -438,23 +531,31 @@ function renderList(tab) {
   items.forEach((item) => itemList.appendChild(createCard(item, tab)));
 }
 
-function allItems() {
+function allActionItems() {
   return [
     ...state.tasks.map((item) => ({ ...item, source: 'tasks' })),
     ...state.shopping.map((item) => ({ ...item, source: 'shopping' })),
     ...state.documents.map((item) => ({ ...item, source: 'documents' })),
-    ...state.family.map((item) => ({ ...item, source: 'family' })),
   ];
 }
 
 function createCard(item, mode) {
   const card = document.createElement('article');
   card.className = `card ${item.done ? 'done' : ''}`;
+  const cardMode = item.source || mode;
 
   const marker = document.createElement('button');
   marker.type = 'button';
   marker.className = 'marker';
-  marker.textContent = item.done ? '✓' : markerText(item.source || mode);
+  if (cardMode === 'family') {
+    const avatar = getAvatarById(item.avatar || randomAvatarId(item.title));
+    marker.classList.add('avatar-marker');
+    marker.style.setProperty('--avatar-color', avatar.color);
+    marker.textContent = avatarLabel(avatar.id, item.title);
+    marker.disabled = true;
+  } else {
+    marker.textContent = item.done ? '✓' : markerText(cardMode);
+  }
   marker.addEventListener('click', () => {
     if (mode === 'tasks') toggleTask(item.id);
   });
@@ -680,7 +781,9 @@ async function pullFromCloud() {
 }
 
 async function syncAfterLogin() {
-  await ensureHousehold();
+  await ensureWorkspaceForCurrentUser();
+  const memberItem = ensureCurrentUserFamilyMember('Профиль участника LifeHub');
+  if (memberItem) await upsertCloudItem('family', memberItem);
   await pushStateToCloud();
   await loadStateFromCloud();
   await subscribeToPushNotifications();
@@ -787,7 +890,7 @@ async function registerServiceWorker() {
       if (event.data?.type !== 'lifehub:push') return;
       const notification = event.data.notification || {};
       showToast(notification.title || 'LifeHub', notification.body || '');
-      if (notification.type === 'invite_accepted') {
+      if (notification.type === 'invite_accepted' || notification.type === 'item_added') {
         loadStateFromCloud().catch(console.error);
       }
     });
@@ -914,13 +1017,15 @@ async function loadNotifications() {
 
     if (!data?.length) return;
 
-    let shouldRefreshFamily = false;
+    let shouldRefreshData = false;
     data.forEach((notification) => {
       if (seenNotificationIds.has(notification.id)) return;
       seenNotificationIds.add(notification.id);
       showToast(notification.title || 'LifeHub', notification.body || '');
       notifyBrowser(notification.title || 'LifeHub', notification.body || '');
-      if (notification.type === 'invite_accepted') shouldRefreshFamily = true;
+      if (notification.type === 'invite_accepted' || notification.type === 'item_added') {
+        shouldRefreshData = true;
+      }
     });
 
     const ids = data.map((notification) => notification.id);
@@ -930,7 +1035,7 @@ async function loadNotifications() {
       .in('id', ids)
       .eq('target_user_id', currentUser.id);
 
-    if (shouldRefreshFamily) {
+    if (shouldRefreshData) {
       await loadStateFromCloud();
     }
   } finally {
@@ -938,12 +1043,47 @@ async function loadNotifications() {
   }
 }
 
+async function notifyHouseholdItemAdded(list, item) {
+  if (!currentUser || !isCloudReady()) return;
+
+  const { data: members, error } = await supabaseClient
+    .from('lifehub_members')
+    .select('user_id')
+    .eq('workspace_key', cloudConfig.workspaceKey);
+  if (error) throw error;
+
+  const recipients = (members || [])
+    .map((member) => member.user_id)
+    .filter((userId) => userId && userId !== currentUser.id);
+  if (!recipients.length) return;
+
+  const actor = currentUserProfile().name;
+  const rows = recipients.map((userId) => ({
+    workspace_key: cloudConfig.workspaceKey,
+    target_user_id: userId,
+    actor_user_id: currentUser.id,
+    type: 'item_added',
+    title: 'Новое дело в LifeHub',
+    body: `${actor}: ${item.title} · ${labels[list]}`,
+    dedupe_key: `item_added:${item.id}:${userId}`,
+    payload: {
+      item_id: String(item.id),
+      list,
+    },
+  }));
+
+  const { error: insertError } = await supabaseClient
+    .from('lifehub_notifications')
+    .insert(rows);
+  if (insertError && insertError.code !== '23505') throw insertError;
+}
+
 function checkDueReminders() {
   const todayKey = new Date().toISOString().slice(0, 10);
   const seen = loadReminderSeen();
   let touched = false;
 
-  allItems()
+  allActionItems()
     .filter((item) => !item.done && item.dueDate)
     .forEach((item) => {
       const days = daysUntil(item.dueDate);
@@ -1030,12 +1170,19 @@ function updateAuthUI() {
   const needsAccess = !currentUser;
   const isInvite = authMode === 'invite';
   const isSignup = authMode === 'signup';
+  const wantsProfile = isSignup || isInvite;
   document.body.classList.toggle('access-active', needsAccess);
   accessScreen.classList.toggle('visible', needsAccess);
   accessModeTabs.hidden = isInvite;
+  accessNameRow.hidden = !wantsProfile;
+  avatarPicker.hidden = !wantsProfile;
   accessModeButtons.forEach((button) => {
     button.classList.toggle('active', button.dataset.authMode === authMode);
   });
+  if (wantsProfile && !accessProfileName.value.trim()) {
+    accessProfileName.value = localProfile.name || '';
+  }
+  renderAvatarPicker();
 
   if (!isCloudReady()) {
     accessKicker.textContent = 'LifeHub';
@@ -1063,9 +1210,9 @@ function updateAuthUI() {
       ? 'Создай аккаунт'
       : 'Войди в LifeHub';
   accessCopy.textContent = isInvite
-    ? 'Введи email, и LifeHub сразу подключит тебя к общим делам, покупкам и документам семьи.'
+    ? 'Укажи имя, выбери аватар и введи email. LifeHub сразу подключит тебя к семье после письма.'
     : isSignup
-      ? 'Укажи email, чтобы создать аккаунт и хранить семейные дела в облаке.'
+      ? 'Укажи имя, выбери аватар и введи email, чтобы создать семейный аккаунт.'
       : 'Укажи email от своего аккаунта, и мы отправим письмо для входа без пароля.';
   accessSubmitButton.textContent = isInvite
     ? 'Принять приглашение'
@@ -1106,6 +1253,7 @@ async function sendMagicLink() {
   }
   authEmailInput.value = email;
   accessAuthEmail.value = email;
+  const profile = authMode === 'login' ? localProfile : collectAccessProfile(email);
   requestNotificationAccess().catch(console.error);
   accessSubmitButton.disabled = true;
   accessSubmitButton.textContent = 'Отправляем...';
@@ -1117,6 +1265,13 @@ async function sendMagicLink() {
       options: {
         emailRedirectTo: window.location.href,
         shouldCreateUser: authMode !== 'login',
+        data: authMode === 'login'
+          ? undefined
+          : {
+              display_name: profile.name,
+              name: profile.name,
+              avatar: profile.avatar,
+            },
       },
     });
 
@@ -1162,7 +1317,7 @@ async function createInviteLink() {
   }
 
   try {
-    await ensureHousehold();
+    await ensureWorkspaceForCurrentUser();
     await pushStateToCloud();
     const token = makeInviteToken();
     const expiresAt = new Date();
@@ -1194,6 +1349,7 @@ async function copyInviteLink() {
 }
 
 async function ensureHousehold() {
+  const profile = currentUserProfile();
   const { error: householdError } = await supabaseClient.from('lifehub_households').upsert({
     workspace_key: cloudConfig.workspaceKey,
     name: 'LifeHub family',
@@ -1205,9 +1361,26 @@ async function ensureHousehold() {
     workspace_key: cloudConfig.workspaceKey,
     user_id: currentUser.id,
     email: currentUser.email || '',
+    display_name: profile.name,
+    avatar: profile.avatar,
     role: 'owner',
   }, { onConflict: 'workspace_key,user_id' });
   if (memberError) throw memberError;
+}
+
+async function ensureWorkspaceForCurrentUser() {
+  const { data, error } = await supabaseClient
+    .from('lifehub_members')
+    .select('role')
+    .eq('workspace_key', cloudConfig.workspaceKey)
+    .eq('user_id', currentUser.id)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (data) return data.role;
+
+  await ensureHousehold();
+  return 'owner';
 }
 
 async function acceptPendingInvite() {
@@ -1225,7 +1398,7 @@ async function acceptPendingInvite() {
     updateCloudBadge();
 
     await loadStateFromCloud();
-    const memberItem = addFamilyMemberFromAuth(currentUser.email || 'Новый участник');
+    const memberItem = ensureCurrentUserFamilyMember('Добавлен по инвайт-ссылке');
     if (memberItem) await upsertCloudItem('family', memberItem);
     pendingInviteToken = '';
     authMode = 'login';
@@ -1244,16 +1417,33 @@ async function acceptPendingInvite() {
   }
 }
 
-function addFamilyMemberFromAuth(email) {
-  if (state.family.some((item) => item.title === email)) return null;
-  const item = createItem(email, 'Участник', '', 'Добавлен по инвайт-ссылке');
+function ensureCurrentUserFamilyMember(note = 'Профиль участника LifeHub') {
+  if (!currentUser) return null;
+  const profile = currentUserProfile();
+  const memberId = `member-${currentUser.id}`;
+  const existing = state.family.find((item) => String(item.id) === memberId);
+  const next = {
+    ...(existing || createItem(profile.name, 'Участник', '', note, false, null, profile.avatar)),
+    id: memberId,
+    title: profile.name,
+    category: existing?.category || 'Участник',
+    dueDate: '',
+    note,
+    done: false,
+    avatar: profile.avatar,
+  };
   state.family = [
-    item,
-    ...state.family,
+    next,
+    ...state.family.filter((item) => {
+      const sameId = String(item.id) === memberId;
+      const duplicateEmail = currentUser.email && item.title === currentUser.email;
+      const defaultSelf = item.title === 'Я' && item.category === 'Владелец';
+      return !sameId && !duplicateEmail && !defaultSelf;
+    }),
   ];
   saveState();
   render();
-  return item;
+  return next;
 }
 
 function getInviteTokenFromUrl() {
@@ -1414,6 +1604,7 @@ function itemToRow(list, item) {
     note: item.note || '',
     done: Boolean(item.done),
     attachment: item.attachment || null,
+    avatar: item.avatar || '',
     created_at: item.createdAt || new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -1428,6 +1619,7 @@ function rowToItem(row) {
     note: row.note || '',
     done: Boolean(row.done),
     attachment: row.attachment || null,
+    avatar: row.avatar || '',
     createdAt: row.created_at || new Date().toISOString(),
   };
 }

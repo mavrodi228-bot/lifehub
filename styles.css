@@ -200,6 +200,69 @@ h1 {
   line-height: 1.45;
 }
 
+.access-showcase {
+  position: relative;
+  display: grid;
+  min-height: 132px;
+}
+
+.showcase-shot {
+  display: grid;
+  gap: 5px;
+  width: 74%;
+  min-height: 104px;
+  border: 1px solid rgba(38, 48, 40, 0.18);
+  border-radius: 8px;
+  background: #fffaf0;
+  padding: 13px;
+  box-shadow: 0 12px 24px rgba(38, 48, 40, 0.12);
+  animation: showcaseFloat 8s ease-in-out infinite;
+}
+
+.showcase-shot span,
+.showcase-shot small {
+  color: #4f574b;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.showcase-shot strong {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.shot-home {
+  background:
+    linear-gradient(135deg, rgba(218, 255, 114, 0.45), transparent 62%),
+    #fffaf0;
+}
+
+.shot-family,
+.shot-docs {
+  position: absolute;
+  right: 0;
+  width: 58%;
+  min-height: 78px;
+  padding: 11px;
+}
+
+.shot-family {
+  top: 18px;
+  background:
+    linear-gradient(135deg, rgba(184, 216, 255, 0.72), transparent 66%),
+    #fffdf6;
+  animation-delay: 900ms;
+}
+
+.shot-docs {
+  right: 16px;
+  bottom: 0;
+  background:
+    linear-gradient(135deg, rgba(255, 177, 153, 0.46), transparent 66%),
+    #fffdf6;
+  animation-delay: 1800ms;
+}
+
 .access-mode-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -249,6 +312,33 @@ h1 {
   color: var(--ink);
   font-size: 16px;
   padding: 13px 12px;
+}
+
+.avatar-picker {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.avatar-option,
+.avatar-marker {
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(38, 48, 40, 0.25);
+  background: var(--avatar-color, var(--acid));
+  color: var(--ink);
+  font-weight: 950;
+}
+
+.avatar-option {
+  min-height: 42px;
+  border-radius: 8px;
+  box-shadow: 0 4px 0 rgba(34, 38, 31, 0.12);
+}
+
+.avatar-option.active {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px rgba(218, 255, 114, 0.42), 0 4px 0 rgba(34, 38, 31, 0.18);
 }
 
 .access-auth-form button {
@@ -902,6 +992,10 @@ h1 {
   animation: toastOut 220ms ease both;
 }
 
+.avatar-marker {
+  box-shadow: 0 4px 0 rgba(34, 38, 31, 0.12);
+}
+
 .toolbar {
   display: grid;
   grid-template-columns: 1fr auto auto;
@@ -1027,6 +1121,17 @@ h1 {
   to {
     opacity: 0;
     transform: translateY(-8px) scale(0.98);
+  }
+}
+
+@keyframes showcaseFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-4px);
   }
 }
 

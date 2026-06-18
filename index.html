@@ -18,12 +18,35 @@
         <h1 id="access-title">Войди в LifeHub</h1>
         <p id="access-copy">Введи email, и мы отправим письмо для входа без пароля.</p>
 
+        <div class="access-showcase" aria-label="Превью LifeHub">
+          <article class="showcase-shot shot-home">
+            <span>Сегодня</span>
+            <strong>3 дела</strong>
+            <small>Фильтр воды · Аптечка · Покупки</small>
+          </article>
+          <article class="showcase-shot shot-family">
+            <span>Семья</span>
+            <strong>4 участника</strong>
+            <small>Саша добавил новую задачу</small>
+          </article>
+          <article class="showcase-shot shot-docs">
+            <span>Документы</span>
+            <strong>2 скоро</strong>
+            <small>Страховка · Гарантия</small>
+          </article>
+        </div>
+
         <div id="access-mode-tabs" class="access-mode-tabs" role="tablist" aria-label="Режим входа">
           <button id="access-login-tab" class="active" type="button" data-auth-mode="login">Войти</button>
           <button id="access-signup-tab" type="button" data-auth-mode="signup">Регистрация</button>
         </div>
 
         <form id="access-auth-form" class="access-auth-form">
+          <label id="access-name-row" class="access-email-label">
+            Имя
+            <input id="access-profile-name" type="text" autocomplete="name" placeholder="Например: Саша" />
+          </label>
+          <div id="avatar-picker" class="avatar-picker" aria-label="Выбор аватара"></div>
           <label class="access-email-label">
             Email
             <input id="access-auth-email" type="email" autocomplete="email" placeholder="you@example.com" />
@@ -46,7 +69,6 @@
         </div>
         <div class="header-actions">
           <button id="sync-button" class="badge ghost-badge" type="button">Войти</button>
-          <button id="export-button" class="badge" type="button">Экспорт</button>
         </div>
       </header>
 

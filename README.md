@@ -10,13 +10,15 @@ LifeHub is a mobile-first PWA for organizing home tasks, shopping, family items,
 - Document tracker with expiration dates
 - Local document attachments for small images/PDFs
 - Family/shared responsibility list
+- Member names and generated avatars
 - Supabase email auth
 - Family invite links
 - Full-screen invite onboarding
 - Full-screen login and registration
 - In-app reminders and Web Push notifications for nearby due dates
+- New item notifications for other family members
 - Invite acceptance notifications for the invite creator
-- Search, edit, delete, and JSON export
+- Search, edit, and delete
 - Capacitor iOS wrapper for App Store builds
 - Local browser storage
 
@@ -67,7 +69,7 @@ For GitHub Pages, publish the repository and enable Pages from the repository se
 
 After this, users do not need to configure Supabase themselves. New cards are saved to the configured Supabase project automatically after sign-in. Attachments in cloud mode are uploaded to the `lifehub-files` Storage bucket.
 
-If you already created the Supabase project earlier, run the current `supabase.sql` again. It adds the notification table and updates the invite RPC so accepted invites create a family member card automatically.
+If you already created the Supabase project earlier, run the current `supabase.sql` again. It adds profile avatars, push subscriptions, item notifications, and updates the invite RPC so accepted invites create a family member card automatically.
 
 ## Family Invites
 
@@ -86,34 +88,46 @@ Security note: `supabase.sql` uses Supabase Auth, workspace membership checks, a
 LifeHub includes a service worker and Supabase Edge Function for real push notifications.
 
 1. Run the latest `supabase.sql` in Supabase SQL Editor.
-2. Generate VAPID keys:
+2. Generate VAPID keys on your computer in the project folder:
 
-```bash
+```powershell
+npm install
 npx web-push generate-vapid-keys
 ```
+
+The command prints `Public Key` and `Private Key`. The public key goes into the app. The private key stays only in Supabase secrets.
 
 3. Put the public key into `config.js`:
 
 ```js
-vapidPublicKey: 'YOUR_PUBLIC_VAPID_KEY'
+vapidPublicKey: 'PASTE_PUBLIC_KEY_HERE'
 ```
 
-4. Add Supabase Edge Function secrets:
+4. Log in to Supabase CLI and link the project:
 
-```bash
+```powershell
+supabase login
+supabase link --project-ref YOUR_PROJECT_REF
+```
+
+`YOUR_PROJECT_REF` is the id in your Supabase URL, for example `avikkeimjvojhqpavheh`.
+
+5. Add Supabase Edge Function secrets:
+
+```powershell
 supabase secrets set VAPID_SUBJECT=mailto:hello@yourdomain.com
-supabase secrets set VAPID_PUBLIC_KEY=YOUR_PUBLIC_VAPID_KEY
-supabase secrets set VAPID_PRIVATE_KEY=YOUR_PRIVATE_VAPID_KEY
+supabase secrets set VAPID_PUBLIC_KEY=PASTE_PUBLIC_KEY_HERE
+supabase secrets set VAPID_PRIVATE_KEY=PASTE_PRIVATE_KEY_HERE
 supabase secrets set LIFEHUB_PUSH_SECRET=any-long-random-string
 ```
 
-5. Deploy the push sender:
+6. Deploy the push sender:
 
-```bash
+```powershell
 supabase functions deploy send-push
 ```
 
-6. Call `send-push` every few minutes from Supabase cron or any server cron with header:
+7. Call `send-push` every few minutes from Supabase cron or any server cron with header:
 
 ```text
 x-lifehub-push-secret: any-long-random-string
