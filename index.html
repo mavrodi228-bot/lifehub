@@ -12,15 +12,27 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <section id="invite-screen" class="invite-screen" aria-live="polite">
-      <div class="invite-card">
-        <span class="hero-label">Приглашение LifeHub</span>
-        <h1>Тебя пригласили в семейное пространство</h1>
-        <p id="invite-copy">Войди по email, и LifeHub сразу подключит тебя к общим делам, покупкам и документам семьи.</p>
-        <form id="invite-auth-form" class="gate-auth-form">
-          <input id="invite-auth-email" type="email" autocomplete="email" placeholder="you@example.com" />
-          <button id="invite-login-button" type="submit">Присоединиться</button>
+    <section id="access-screen" class="access-screen" aria-live="polite">
+      <div class="access-card">
+        <span id="access-kicker" class="hero-label">Аккаунт LifeHub</span>
+        <h1 id="access-title">Войди в LifeHub</h1>
+        <p id="access-copy">Введи email, и мы отправим письмо для входа без пароля.</p>
+
+        <div id="access-mode-tabs" class="access-mode-tabs" role="tablist" aria-label="Режим входа">
+          <button id="access-login-tab" class="active" type="button" data-auth-mode="login">Войти</button>
+          <button id="access-signup-tab" type="button" data-auth-mode="signup">Регистрация</button>
+        </div>
+
+        <form id="access-auth-form" class="access-auth-form">
+          <label class="access-email-label">
+            Email
+            <input id="access-auth-email" type="email" autocomplete="email" placeholder="you@example.com" />
+          </label>
+          <button id="access-submit-button" type="submit">Войти</button>
         </form>
+
+        <p id="access-helper" class="access-helper">Если аккаунта еще нет, выбери «Регистрация».</p>
+        <p id="access-status" class="access-status" role="status"></p>
       </div>
     </section>
 
@@ -39,18 +51,6 @@
       </header>
 
       <section id="home-screen" class="screen active">
-        <section id="auth-gate" class="auth-gate">
-          <div>
-            <span class="hero-label">Аккаунт LifeHub</span>
-            <h2>Войди, чтобы семья видела общие дела.</h2>
-            <p id="gate-auth-copy">Мы отправим ссылку на email. Пароль не нужен.</p>
-          </div>
-          <form id="gate-auth-form" class="gate-auth-form">
-            <input id="gate-auth-email" type="email" autocomplete="email" placeholder="you@example.com" />
-            <button id="gate-login-button" type="submit">Получить ссылку</button>
-          </form>
-        </section>
-
         <section class="hero">
           <div>
             <span class="hero-label">Домашний пульт</span>
@@ -204,12 +204,8 @@
               <p class="kicker">Аккаунт</p>
               <p id="auth-status" class="dialog-copy">Войди по email, чтобы семья могла подключаться по ссылке.</p>
             </div>
-            <label id="auth-email-row" class="field-label">
-              Email
-              <input id="auth-email" type="email" autocomplete="email" placeholder="you@example.com" />
-            </label>
+            <input id="auth-email" class="hidden-control" type="email" autocomplete="email" />
             <div class="auth-actions">
-              <button id="send-login-button" class="secondary-button" type="button">Войти по ссылке</button>
               <button id="sign-out-button" class="secondary-button" type="button">Выйти</button>
             </div>
           </section>
@@ -227,6 +223,7 @@
           </section>
 
           <button id="disconnect-sync-button" class="secondary-button hidden-control" type="button">Выйти</button>
+          <button id="send-login-button" class="hidden-control" type="button">Войти</button>
           <button id="pull-sync-button" class="secondary-button hidden-control" type="button">Обновить</button>
           <button id="push-sync-button" class="secondary-button hidden-control" type="button">Сохранить</button>
           <button id="save-sync-button" class="hidden-control" type="submit">Проверить</button>
@@ -239,6 +236,7 @@
       window.LIFEHUB_CONFIG = window.LIFEHUB_CONFIG || {
         supabaseUrl: '',
         supabaseAnonKey: '',
+        vapidPublicKey: '',
         appName: 'LifeHub',
       };
     </script>

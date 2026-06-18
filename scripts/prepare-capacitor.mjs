@@ -10,6 +10,7 @@ const files = [
   'config.js',
   'manifest.webmanifest',
   'icon.svg',
+  'sw.js',
 ];
 
 await rm(outDir, { recursive: true, force: true });

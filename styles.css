@@ -36,7 +36,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-body.invite-active {
+body.access-active {
   overflow: hidden;
 }
 
@@ -146,24 +146,7 @@ h1 {
   box-shadow: var(--shadow);
 }
 
-.auth-gate {
-  display: none;
-  gap: 16px;
-  margin: 4px 0 14px;
-  border: 1px solid #d5cbb9;
-  border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(184, 216, 255, 0.62), rgba(255, 253, 246, 0.94)),
-    var(--panel);
-  padding: 18px;
-  box-shadow: var(--shadow);
-}
-
-.auth-gate.visible {
-  display: grid;
-}
-
-.invite-screen {
+.access-screen {
   position: fixed;
   inset: 0;
   z-index: 70;
@@ -178,12 +161,12 @@ h1 {
   padding: max(22px, env(safe-area-inset-top)) 18px max(22px, env(safe-area-inset-bottom));
 }
 
-.invite-screen.visible {
+.access-screen.visible {
   display: grid;
   animation: screenIn 240ms ease both;
 }
 
-.invite-card {
+.access-card {
   position: relative;
   display: grid;
   gap: 18px;
@@ -195,7 +178,7 @@ h1 {
   box-shadow: 0 22px 60px rgba(34, 38, 31, 0.22);
 }
 
-.invite-card .hero-label {
+.access-card .hero-label {
   width: max-content;
   margin: 0;
   border-color: rgba(38, 48, 40, 0.22);
@@ -203,41 +186,60 @@ h1 {
   color: var(--ink);
 }
 
-.invite-card h1 {
+.access-card h1 {
   margin: 0;
   max-width: 10ch;
   font-size: clamp(38px, 11vw, 58px);
   line-height: 0.92;
 }
 
-.invite-card p {
+.access-card p {
   margin: 0;
   color: #4f574b;
   font-size: 16px;
   line-height: 1.45;
 }
 
-.auth-gate h2 {
-  margin: 0;
-  color: var(--ink);
-  font-size: 25px;
-  line-height: 1.08;
-}
-
-.auth-gate p {
-  margin: 10px 0 0;
-  color: #4f574b;
-  font-size: 14px;
-  line-height: 1.42;
-}
-
-.gate-auth-form {
+.access-mode-tabs {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f5efe1;
+  padding: 5px;
 }
 
-.gate-auth-form input {
+.access-mode-tabs button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #4f574b;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.access-mode-tabs button.active {
+  background: var(--dark);
+  color: #fff9ea;
+  box-shadow: 0 4px 0 rgba(34, 38, 31, 0.15);
+}
+
+.access-auth-form {
+  display: grid;
+  gap: 10px;
+}
+
+.access-email-label {
+  display: grid;
+  gap: 7px;
+  color: #4f574b;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.access-auth-form input {
   min-width: 0;
   width: 100%;
   border: 0;
@@ -249,7 +251,7 @@ h1 {
   padding: 13px 12px;
 }
 
-.gate-auth-form button {
+.access-auth-form button {
   min-height: 46px;
   border: 0;
   border-radius: 7px;
@@ -261,8 +263,34 @@ h1 {
   box-shadow: 0 4px 0 rgba(34, 38, 31, 0.16);
 }
 
-.invite-card .gate-auth-form {
-  grid-template-columns: 1fr;
+.access-helper {
+  font-size: 13px !important;
+}
+
+.access-status {
+  display: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #faf5e8;
+  padding: 11px;
+  font-size: 13px !important;
+  font-weight: 850;
+}
+
+.access-status:not(:empty) {
+  display: block;
+}
+
+.access-status.ok {
+  border-color: #b8d8ff;
+  background: #edf6ff;
+  color: #17334d;
+}
+
+.access-status.error {
+  border-color: #ffd0bf;
+  background: #fff0ea;
+  color: var(--warn);
 }
 
 .hero-label {
@@ -950,14 +978,19 @@ h1 {
 
   .auth-actions,
   .invite-box,
-  .gate-auth-form {
+  .access-auth-form {
     grid-template-columns: 1fr;
   }
 }
 
 @media (min-width: 520px) {
-  .invite-card .gate-auth-form {
+  .access-card .access-auth-form {
     grid-template-columns: 1fr auto;
+    align-items: end;
+  }
+
+  .access-card .access-email-label {
+    min-width: 0;
   }
 }
 

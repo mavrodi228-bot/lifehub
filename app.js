@@ -3,6 +3,7 @@ const legacyStorageKey = 'lifehub-pwa-state-v1';
 const cloudConfigKey = 'lifehub-supabase-config-v1';
 const storageBucket = 'lifehub-files';
 const reminderSeenKey = 'lifehub-reminder-seen-v1';
+const serviceWorkerPath = 'sw.js';
 
 const labels = {
   home: 'Главная',
@@ -72,16 +73,17 @@ const clearDoneButton = document.querySelector('#clear-done-button');
 const inviteFamilyButton = document.querySelector('#invite-family-button');
 const exportButton = document.querySelector('#export-button');
 const syncButton = document.querySelector('#sync-button');
-const authGate = document.querySelector('#auth-gate');
-const gateAuthForm = document.querySelector('#gate-auth-form');
-const gateAuthEmail = document.querySelector('#gate-auth-email');
-const gateAuthCopy = document.querySelector('#gate-auth-copy');
-const gateLoginButton = document.querySelector('#gate-login-button');
-const inviteScreen = document.querySelector('#invite-screen');
-const inviteAuthForm = document.querySelector('#invite-auth-form');
-const inviteAuthEmail = document.querySelector('#invite-auth-email');
-const inviteLoginButton = document.querySelector('#invite-login-button');
-const inviteCopy = document.querySelector('#invite-copy');
+const accessScreen = document.querySelector('#access-screen');
+const accessKicker = document.querySelector('#access-kicker');
+const accessTitle = document.querySelector('#access-title');
+const accessCopy = document.querySelector('#access-copy');
+const accessModeTabs = document.querySelector('#access-mode-tabs');
+const accessModeButtons = Array.from(document.querySelectorAll('[data-auth-mode]'));
+const accessAuthForm = document.querySelector('#access-auth-form');
+const accessAuthEmail = document.querySelector('#access-auth-email');
+const accessSubmitButton = document.querySelector('#access-submit-button');
+const accessHelper = document.querySelector('#access-helper');
+const accessStatus = document.querySelector('#access-status');
 const toastStack = document.querySelector('#toast-stack');
 const detailDialog = document.querySelector('#detail-dialog');
 const detailForm = document.querySelector('#detail-form');
@@ -104,7 +106,6 @@ const supabaseKeyInput = document.querySelector('#supabase-key');
 const workspaceKeyInput = document.querySelector('#workspace-key');
 const syncStatus = document.querySelector('#sync-status');
 const authEmailInput = document.querySelector('#auth-email');
-const authEmailRow = document.querySelector('#auth-email-row');
 const authStatus = document.querySelector('#auth-status');
 const authActions = document.querySelector('.auth-actions');
 const sendLoginButton = document.querySelector('#send-login-button');
@@ -121,9 +122,11 @@ let supabaseClient = createSupabaseClient();
 let currentUser = null;
 let authSubscription = null;
 let pendingInviteToken = getInviteTokenFromUrl();
+let authMode = pendingInviteToken ? 'invite' : 'login';
 let inviteAcceptInFlight = false;
 let notificationPollTimer = null;
 let isLoadingNotifications = false;
+let serviceWorkerRegistration = null;
 const seenNotificationIds = new Set();
 
 form.addEventListener('submit', (event) => {
@@ -145,16 +148,16 @@ clearDoneButton.addEventListener('click', () => {
 
 exportButton.addEventListener('click', exportData);
 syncButton.addEventListener('click', openSyncDialog);
-gateAuthForm.addEventListener('submit', (event) => {
+accessAuthForm.addEventListener('submit', (event) => {
   event.preventDefault();
-  authEmailInput.value = gateAuthEmail.value;
+  authEmailInput.value = accessAuthEmail.value;
   sendMagicLink();
 });
-inviteAuthForm.addEventListener('submit', (event) => {
-  event.preventDefault();
-  authEmailInput.value = inviteAuthEmail.value;
-  gateAuthEmail.value = inviteAuthEmail.value;
-  sendMagicLink();
+accessModeButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    authMode = button.dataset.authMode || 'login';
+    updateAuthUI();
+  });
 });
 inviteFamilyButton.addEventListener('click', () => {
   openSyncDialog();
@@ -200,6 +203,7 @@ tabs.forEach((tab) => {
 
 updateCloudBadge();
 render();
+registerServiceWorker();
 initAuth();
 
 function createItem(title, category = 'Общее', dueDate = '', note = '', done = false, attachment = null) {
@@ -613,7 +617,13 @@ function openSyncDialog() {
   workspaceKeyInput.value = cloudConfig.workspaceKey || '';
   inviteLinkInput.value = '';
   updateAuthUI();
-  setSyncStatus(supabaseClient ? 'Войди по email, чтобы включить семейную синхронизацию.' : 'Приложение еще не подключено к серверу.', !supabaseClient);
+  setSyncStatus(
+    currentUser
+      ? 'Аккаунт подключен. Здесь можно выйти или создать семейную ссылку.'
+      : 'Вход и регистрация доступны на стартовом экране.',
+    !supabaseClient,
+    Boolean(currentUser),
+  );
   syncDialog.showModal();
 }
 
@@ -673,6 +683,7 @@ async function syncAfterLogin() {
   await ensureHousehold();
   await pushStateToCloud();
   await loadStateFromCloud();
+  await subscribeToPushNotifications();
   startNotificationPolling();
   checkDueReminders();
   setSyncStatus('Аккаунт подключен. Семейные дела синхронизированы.', false, true);
@@ -730,6 +741,12 @@ function setSyncStatus(message, isError = false, isOk = false) {
   syncStatus.classList.toggle('ok', isOk);
 }
 
+function setAccessStatus(message = '', isError = false, isOk = false) {
+  accessStatus.textContent = message;
+  accessStatus.classList.toggle('error', isError);
+  accessStatus.classList.toggle('ok', isOk);
+}
+
 function showToast(titleText, bodyText = '', type = 'info') {
   if (!toastStack) return;
   const toast = document.createElement('div');
@@ -758,6 +775,97 @@ async function requestNotificationAccess() {
   if (Notification.permission === 'denied') return false;
   const permission = await Notification.requestPermission();
   return permission === 'granted';
+}
+
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return null;
+
+  try {
+    if (serviceWorkerRegistration) return serviceWorkerRegistration;
+    serviceWorkerRegistration = await navigator.serviceWorker.register(serviceWorkerPath);
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      if (event.data?.type !== 'lifehub:push') return;
+      const notification = event.data.notification || {};
+      showToast(notification.title || 'LifeHub', notification.body || '');
+      if (notification.type === 'invite_accepted') {
+        loadStateFromCloud().catch(console.error);
+      }
+    });
+    if (currentUser) {
+      subscribeToPushNotifications().catch(console.error);
+    }
+    return serviceWorkerRegistration;
+  } catch (error) {
+    console.warn('Service worker registration failed', error);
+    return null;
+  }
+}
+
+async function subscribeToPushNotifications() {
+  if (!currentUser || !isCloudReady()) return false;
+  if (!serviceWorkerRegistration) {
+    await registerServiceWorker();
+  }
+  if (!serviceWorkerRegistration || !('PushManager' in window)) return false;
+
+  const vapidPublicKey = getVapidPublicKey();
+  if (!vapidPublicKey) return false;
+
+  const allowed = await requestNotificationAccess();
+  if (!allowed) return false;
+
+  const subscription = await serviceWorkerRegistration.pushManager.getSubscription()
+    || await serviceWorkerRegistration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+    });
+
+  await savePushSubscription(subscription);
+  return true;
+}
+
+async function savePushSubscription(subscription) {
+  const payload = subscription.toJSON();
+  const { error } = await supabaseClient
+    .from('lifehub_push_subscriptions')
+    .upsert({
+      user_id: currentUser.id,
+      workspace_key: cloudConfig.workspaceKey,
+      endpoint: payload.endpoint,
+      p256dh: payload.keys?.p256dh || '',
+      auth: payload.keys?.auth || '',
+      user_agent: navigator.userAgent,
+      enabled: true,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'endpoint' });
+
+  if (error) {
+    if (['42P01', 'PGRST205'].includes(error.code)) return;
+    throw error;
+  }
+}
+
+async function disablePushSubscription() {
+  if (!serviceWorkerRegistration || !supabaseClient || !currentUser) return;
+  const subscription = await serviceWorkerRegistration.pushManager?.getSubscription?.();
+  if (!subscription) return;
+
+  await supabaseClient
+    .from('lifehub_push_subscriptions')
+    .update({ enabled: false, updated_at: new Date().toISOString() })
+    .eq('endpoint', subscription.endpoint)
+    .eq('user_id', currentUser.id);
+}
+
+function getVapidPublicKey() {
+  return (window.LIFEHUB_CONFIG?.vapidPublicKey || '').trim();
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = `${base64String}${padding}`.replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
 }
 
 function notifyBrowser(titleText, bodyText) {
@@ -911,93 +1019,129 @@ async function initAuth() {
 }
 
 function updateAuthUI() {
-  if (!authStatus) return;
+  if (!authStatus || !accessScreen) return;
   const hasPendingInvite = Boolean(pendingInviteToken);
-  document.body.classList.toggle('invite-active', hasPendingInvite && !currentUser);
-  inviteScreen.classList.toggle('visible', hasPendingInvite && !currentUser);
-  inviteLoginButton.disabled = !isCloudReady() || Boolean(currentUser);
+  if (hasPendingInvite && !currentUser) {
+    authMode = 'invite';
+  } else if (authMode === 'invite') {
+    authMode = 'login';
+  }
+
+  const needsAccess = !currentUser;
+  const isInvite = authMode === 'invite';
+  const isSignup = authMode === 'signup';
+  document.body.classList.toggle('access-active', needsAccess);
+  accessScreen.classList.toggle('visible', needsAccess);
+  accessModeTabs.hidden = isInvite;
+  accessModeButtons.forEach((button) => {
+    button.classList.toggle('active', button.dataset.authMode === authMode);
+  });
 
   if (!isCloudReady()) {
-    authGate.classList.add('visible');
-    gateAuthCopy.textContent = 'Приложение еще не подключено к серверу. Сообщи владельцу LifeHub.';
-    inviteCopy.textContent = 'LifeHub пока не подключен к серверу. Попроси владельца приложения проверить настройки.';
+    accessKicker.textContent = 'LifeHub';
+    accessTitle.textContent = 'Сервер не подключен';
+    accessCopy.textContent = 'Приложение еще не подключено к серверу. Сообщи владельцу LifeHub.';
+    accessHelper.textContent = 'Без подключения к серверу вход, регистрация и семейные инвайты недоступны.';
+    accessSubmitButton.textContent = 'Недоступно';
+    accessSubmitButton.disabled = true;
     authStatus.textContent = 'Приложение еще не подключено к серверу.';
     sendLoginButton.disabled = true;
-    gateLoginButton.disabled = true;
-    inviteLoginButton.disabled = true;
     signOutButton.disabled = true;
     createInviteButton.disabled = true;
     copyInviteButton.disabled = true;
-    authEmailRow.hidden = false;
     sendLoginButton.hidden = false;
     signOutButton.hidden = true;
     invitePanel.hidden = true;
     return;
   }
 
-  authGate.classList.toggle('visible', !currentUser);
-  gateLoginButton.disabled = Boolean(currentUser);
-  gateAuthCopy.textContent = hasPendingInvite
-    ? 'Войди по email, чтобы принять приглашение в семью.'
-    : 'Мы отправим ссылку на email. Пароль не нужен.';
-  inviteCopy.textContent = 'Войди по email, и LifeHub сразу подключит тебя к общим делам, покупкам и документам семьи.';
+  accessSubmitButton.disabled = Boolean(currentUser);
+  accessKicker.textContent = isInvite ? 'Приглашение LifeHub' : 'Аккаунт LifeHub';
+  accessTitle.textContent = isInvite
+    ? 'Тебя пригласили в семью'
+    : isSignup
+      ? 'Создай аккаунт'
+      : 'Войди в LifeHub';
+  accessCopy.textContent = isInvite
+    ? 'Введи email, и LifeHub сразу подключит тебя к общим делам, покупкам и документам семьи.'
+    : isSignup
+      ? 'Укажи email, чтобы создать аккаунт и хранить семейные дела в облаке.'
+      : 'Укажи email от своего аккаунта, и мы отправим письмо для входа без пароля.';
+  accessSubmitButton.textContent = isInvite
+    ? 'Принять приглашение'
+    : isSignup
+      ? 'Зарегистрироваться'
+      : 'Войти';
+  accessHelper.textContent = isInvite
+    ? 'После письма ты сразу попадешь в семейное пространство.'
+    : isSignup
+      ? 'Уже есть аккаунт? Выбери «Войти».'
+      : 'Нет аккаунта? Выбери «Регистрация».';
   sendLoginButton.disabled = false;
-  inviteLoginButton.disabled = Boolean(currentUser);
   signOutButton.disabled = !currentUser;
   createInviteButton.disabled = !currentUser;
   copyInviteButton.disabled = !inviteLinkInput.value;
   copyInviteButton.hidden = !inviteLinkInput.value;
-  authEmailRow.hidden = Boolean(currentUser);
-  sendLoginButton.hidden = Boolean(currentUser);
+  sendLoginButton.hidden = true;
   signOutButton.hidden = !currentUser;
   invitePanel.hidden = !currentUser;
   authActions.classList.toggle('solo', Boolean(currentUser));
   authStatus.textContent = currentUser
     ? `Вошел: ${currentUser.email || currentUser.id}`
-    : 'Войди по email, чтобы создавать семейные ссылки.';
+    : 'Вход и регистрация доступны на стартовом экране.';
 }
 
 async function sendMagicLink() {
   if (!isCloudReady()) {
     setSyncStatus('Приложение еще не подключено к серверу.', true);
+    setAccessStatus('Приложение еще не подключено к серверу.', true);
     return;
   }
 
-  const email = (authEmailInput.value || gateAuthEmail.value || inviteAuthEmail.value).trim();
+  const email = (authEmailInput.value || accessAuthEmail.value).trim();
   if (!email) {
     setSyncStatus('Введи email для входа.', true);
-    if (pendingInviteToken) {
-      inviteCopy.textContent = 'Введи email, чтобы принять приглашение.';
-    }
+    setAccessStatus('Введи email, чтобы продолжить.', true);
     return;
   }
   authEmailInput.value = email;
-  gateAuthEmail.value = email;
-  inviteAuthEmail.value = email;
+  accessAuthEmail.value = email;
   requestNotificationAccess().catch(console.error);
+  accessSubmitButton.disabled = true;
+  accessSubmitButton.textContent = 'Отправляем...';
+  setAccessStatus('');
 
-  const { error } = await supabaseClient.auth.signInWithOtp({
-    email,
-    options: {
-      emailRedirectTo: window.location.href,
-    },
-  });
+  try {
+    const { error } = await supabaseClient.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: window.location.href,
+        shouldCreateUser: authMode !== 'login',
+      },
+    });
 
-  if (error) {
-    setSyncStatus(error.message, true);
-    return;
+    if (error) {
+      setSyncStatus(error.message, true);
+      setAccessStatus(error.message, true);
+      return;
+    }
+
+    const successCopy = authMode === 'invite'
+      ? 'Письмо отправлено. Открой его на этом устройстве, и LifeHub подключит тебя к семье.'
+      : authMode === 'signup'
+        ? 'Письмо отправлено. Открой его, чтобы завершить регистрацию.'
+        : 'Письмо отправлено. Открой его, чтобы войти.';
+    setSyncStatus(successCopy, false, true);
+    setAccessStatus(successCopy, false, true);
+    showToast('Письмо отправлено', 'Открой письмо на этом же устройстве.');
+  } finally {
+    updateAuthUI();
   }
-
-  setSyncStatus('Отправил ссылку для входа на email. Открой ее на этом устройстве.', false, true);
-  gateAuthCopy.textContent = 'Ссылка отправлена. Проверь почту и открой письмо на этом устройстве.';
-  if (pendingInviteToken) {
-    inviteCopy.textContent = 'Ссылка отправлена. Открой письмо на этом устройстве, и LifeHub сразу подключит тебя к семье.';
-  }
-  showToast('Письмо отправлено', 'Открой magic-link на этом же устройстве.');
 }
 
 async function signOut() {
   if (!supabaseClient) return;
+  await disablePushSubscription().catch(console.error);
   await supabaseClient.auth.signOut();
   currentUser = null;
   stopNotificationPolling();
@@ -1084,15 +1228,17 @@ async function acceptPendingInvite() {
     const memberItem = addFamilyMemberFromAuth(currentUser.email || 'Новый участник');
     if (memberItem) await upsertCloudItem('family', memberItem);
     pendingInviteToken = '';
+    authMode = 'login';
     window.history.replaceState({}, document.title, window.location.pathname);
     updateAuthUI();
+    await subscribeToPushNotifications();
     startNotificationPolling();
     checkDueReminders();
     setSyncStatus('Инвайт принят. Ты добавлен в семью.', false, true);
     showToast('Ты в семье', 'Общие дела уже загружены в LifeHub.');
   } catch (error) {
     setSyncStatus(error.message || 'Не получилось принять инвайт.', true);
-    inviteCopy.textContent = error.message || 'Не получилось принять приглашение. Попроси новую ссылку.';
+    setAccessStatus(error.message || 'Не получилось принять приглашение. Попроси новую ссылку.', true);
   } finally {
     inviteAcceptInFlight = false;
   }

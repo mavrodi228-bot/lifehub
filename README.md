@@ -13,7 +13,8 @@ LifeHub is a mobile-first PWA for organizing home tasks, shopping, family items,
 - Supabase email auth
 - Family invite links
 - Full-screen invite onboarding
-- In-app and browser reminders for nearby due dates
+- Full-screen login and registration
+- In-app reminders and Web Push notifications for nearby due dates
 - Invite acceptance notifications for the invite creator
 - Search, edit, delete, and JSON export
 - Capacitor iOS wrapper for App Store builds
@@ -60,7 +61,7 @@ For GitHub Pages, publish the repository and enable Pages from the repository se
 5. In Supabase Auth settings, add your deployed app URL to allowed redirect URLs.
    For local testing, add `http://127.0.0.1:8080`.
 6. Open LifeHub.
-7. Enter your email in the first-screen sign-in panel.
+7. Choose login or registration on the full-screen access screen.
 8. Open the magic link from email.
 9. LifeHub will create or join the family workspace and sync data automatically.
 
@@ -79,6 +80,46 @@ If you already created the Supabase project earlier, run the current `supabase.s
 7. The creator of the invite receives a LifeHub notification, and the new person appears in the family list.
 
 Security note: `supabase.sql` uses Supabase Auth, workspace membership checks, and an invite RPC. Keep the service-role key out of the client. Only the publishable anon key belongs in `config.js`.
+
+## Web Push Notifications
+
+LifeHub includes a service worker and Supabase Edge Function for real push notifications.
+
+1. Run the latest `supabase.sql` in Supabase SQL Editor.
+2. Generate VAPID keys:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+3. Put the public key into `config.js`:
+
+```js
+vapidPublicKey: 'YOUR_PUBLIC_VAPID_KEY'
+```
+
+4. Add Supabase Edge Function secrets:
+
+```bash
+supabase secrets set VAPID_SUBJECT=mailto:hello@yourdomain.com
+supabase secrets set VAPID_PUBLIC_KEY=YOUR_PUBLIC_VAPID_KEY
+supabase secrets set VAPID_PRIVATE_KEY=YOUR_PRIVATE_VAPID_KEY
+supabase secrets set LIFEHUB_PUSH_SECRET=any-long-random-string
+```
+
+5. Deploy the push sender:
+
+```bash
+supabase functions deploy send-push
+```
+
+6. Call `send-push` every few minutes from Supabase cron or any server cron with header:
+
+```text
+x-lifehub-push-secret: any-long-random-string
+```
+
+When LifeHub is open and visible, push messages are shown as temporary in-app toasts. When the app is closed or in the background, the service worker shows regular system notifications.
 
 ## Branded Auth Email
 
