@@ -106,8 +106,8 @@ vapidPublicKey: 'PASTE_PUBLIC_KEY_HERE'
 4. Log in to Supabase CLI and link the project:
 
 ```powershell
-supabase login
-supabase link --project-ref YOUR_PROJECT_REF
+npx supabase login
+npx supabase link --project-ref YOUR_PROJECT_REF
 ```
 
 `YOUR_PROJECT_REF` is the id in your Supabase URL, for example `avikkeimjvojhqpavheh`.
@@ -115,17 +115,19 @@ supabase link --project-ref YOUR_PROJECT_REF
 5. Add Supabase Edge Function secrets:
 
 ```powershell
-supabase secrets set VAPID_SUBJECT=mailto:hello@yourdomain.com
-supabase secrets set VAPID_PUBLIC_KEY=PASTE_PUBLIC_KEY_HERE
-supabase secrets set VAPID_PRIVATE_KEY=PASTE_PRIVATE_KEY_HERE
-supabase secrets set LIFEHUB_PUSH_SECRET=any-long-random-string
+npx supabase secrets set VAPID_SUBJECT=mailto:hello@yourdomain.com
+npx supabase secrets set VAPID_PUBLIC_KEY=PASTE_PUBLIC_KEY_HERE
+npx supabase secrets set VAPID_PRIVATE_KEY=PASTE_PRIVATE_KEY_HERE
+npx supabase secrets set LIFEHUB_PUSH_SECRET=any-long-random-string
 ```
 
 6. Deploy the push sender:
 
 ```powershell
-supabase functions deploy send-push
+npx supabase functions deploy send-push
 ```
+
+The committed `supabase/config.toml` disables JWT verification for this one cron function. Access is protected by `LIFEHUB_PUSH_SECRET`.
 
 7. Call `send-push` every few minutes from Supabase cron or any server cron with header:
 
