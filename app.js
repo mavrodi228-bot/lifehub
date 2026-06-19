@@ -400,9 +400,9 @@ function createSupabaseClient() {
   if (!cloudConfig.url || !cloudConfig.key || !window.supabase?.createClient) return null;
   return window.supabase.createClient(cloudConfig.url, cloudConfig.key, {
     auth: {
-      autoRefreshToken: true,
-      persistSession: true,
-      detectSessionInUrl: true,
+        autoRefreshToken: true,
+        persistSession: true,
+      detectSessionInUrl: false,
     },
   });
 }
@@ -1132,6 +1132,14 @@ async function initAuth() {
     authSubscription = null;
   }
 
+  try {
+    await handleAuthRedirect();
+  } catch (error) {
+    const message = error.message || 'Не получилось войти по ссылке. Попробуй отправить письмо еще раз.';
+    setAccessStatus(message, true);
+    setSyncStatus(message, true);
+  }
+
   const { data } = await supabaseClient.auth.getSession();
   currentUser = data.session?.user || null;
   updateAuthUI();
@@ -1156,6 +1164,69 @@ async function initAuth() {
     }
   });
   authSubscription = listener.subscription;
+}
+
+async function handleAuthRedirect() {
+  const url = new URL(window.location.href);
+  const hash = new URLSearchParams(url.hash.replace(/^#/, ''));
+  const errorDescription = url.searchParams.get('error_description')
+    || hash.get('error_description')
+    || url.searchParams.get('error');
+
+  if (errorDescription) {
+    cleanAuthUrl(url);
+    throw new Error(decodeURIComponent(errorDescription));
+  }
+
+  const accessToken = hash.get('access_token');
+  const refreshToken = hash.get('refresh_token');
+  if (accessToken && refreshToken) {
+    const { error } = await supabaseClient.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    cleanAuthUrl(url);
+    if (error) throw error;
+    return;
+  }
+
+  const code = url.searchParams.get('code');
+  if (code) {
+    const { error } = await supabaseClient.auth.exchangeCodeForSession(code);
+    cleanAuthUrl(url);
+    if (error) throw error;
+  }
+}
+
+function buildAuthRedirectUrl() {
+  const url = new URL(window.location.href);
+  removeAuthParams(url);
+  url.hash = '';
+  return url.toString();
+}
+
+function cleanAuthUrl(url = new URL(window.location.href)) {
+  removeAuthParams(url);
+  url.hash = '';
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  window.history.replaceState({}, document.title, nextUrl || window.location.pathname);
+}
+
+function removeAuthParams(url) {
+  [
+    'code',
+    'type',
+    'token_hash',
+    'access_token',
+    'refresh_token',
+    'expires_at',
+    'expires_in',
+    'provider_token',
+    'provider_refresh_token',
+    'error',
+    'error_code',
+    'error_description',
+  ].forEach((param) => url.searchParams.delete(param));
 }
 
 function updateAuthUI() {
@@ -1263,7 +1334,7 @@ async function sendMagicLink() {
     const { error } = await supabaseClient.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: window.location.href,
+        emailRedirectTo: buildAuthRedirectUrl(),
         shouldCreateUser: authMode !== 'login',
         data: authMode === 'login'
           ? undefined
