@@ -4,6 +4,7 @@ const cloudConfigKey = 'lifehub-supabase-config-v1';
 const storageBucket = 'lifehub-files';
 const reminderSeenKey = 'lifehub-reminder-seen-v1';
 const profileKey = 'lifehub-profile-v1';
+const nativePushTokenKey = 'lifehub-native-push-token-v1';
 const serviceWorkerPath = 'sw.js';
 
 const avatarOptions = [
@@ -142,6 +143,8 @@ let inviteAcceptInFlight = false;
 let notificationPollTimer = null;
 let isLoadingNotifications = false;
 let serviceWorkerRegistration = null;
+let nativeAuthListenerReady = false;
+let nativePushListenersReady = false;
 const seenNotificationIds = new Set();
 
 form.addEventListener('submit', (event) => {
@@ -225,7 +228,7 @@ updateCloudBadge();
 renderAvatarPicker();
 render();
 registerServiceWorker();
-initAuth();
+bootstrapAuth();
 
 function createItem(title, category = 'Общее', dueDate = '', note = '', done = false, attachment = null, avatar = '') {
   return {
@@ -787,6 +790,7 @@ async function syncAfterLogin() {
   await pushStateToCloud();
   await loadStateFromCloud();
   await subscribeToPushNotifications();
+  await subscribeToNativePushNotifications();
   startNotificationPolling();
   checkDueReminders();
   setSyncStatus('Аккаунт подключен. Семейные дела синхронизированы.', false, true);
@@ -827,9 +831,11 @@ async function loadStateFromCloud() {
   return data;
 }
 
-function disconnectCloud() {
+async function disconnectCloud() {
   if (supabaseClient) {
-    supabaseClient.auth.signOut().catch(console.error);
+    await disablePushSubscription().catch(console.error);
+    await disableNativePushToken().catch(console.error);
+    await supabaseClient.auth.signOut().catch(console.error);
   }
   currentUser = null;
   stopNotificationPolling();
@@ -958,6 +964,98 @@ async function disablePushSubscription() {
     .update({ enabled: false, updated_at: new Date().toISOString() })
     .eq('endpoint', subscription.endpoint)
     .eq('user_id', currentUser.id);
+}
+
+function isNativeIOS() {
+  const capacitor = window.Capacitor;
+  if (!capacitor) return false;
+  if (typeof capacitor.getPlatform === 'function') {
+    return capacitor.getPlatform() === 'ios';
+  }
+  return capacitor.platform === 'ios';
+}
+
+function nativePushPlugin() {
+  return window.Capacitor?.Plugins?.PushNotifications || null;
+}
+
+async function subscribeToNativePushNotifications() {
+  if (!currentUser || !isCloudReady() || !isNativeIOS()) return false;
+  const PushNotifications = nativePushPlugin();
+  if (!PushNotifications) return false;
+
+  if (!nativePushListenersReady) {
+    nativePushListenersReady = true;
+    await PushNotifications.addListener('registration', (token) => {
+      const value = typeof token === 'string' ? token : token?.value;
+      saveNativePushToken(value).catch(console.error);
+    });
+    await PushNotifications.addListener('registrationError', (error) => {
+      console.warn('Native push registration failed', error);
+      showToast('LifeHub', 'Не получилось включить уведомления iOS.');
+    });
+    await PushNotifications.addListener('pushNotificationReceived', (notification) => {
+      handleNativePushNotification(notification).catch(console.error);
+    });
+    await PushNotifications.addListener('pushNotificationActionPerformed', (event) => {
+      handleNativePushNotification(event?.notification).catch(console.error);
+    });
+  }
+
+  const permission = await PushNotifications.requestPermissions();
+  if (permission.receive !== 'granted') return false;
+  await PushNotifications.register();
+  return true;
+}
+
+async function saveNativePushToken(token) {
+  if (!token || !supabaseClient || !currentUser || !cloudConfig.workspaceKey) return;
+  localStorage.setItem(nativePushTokenKey, token);
+
+  const { error } = await supabaseClient
+    .from('lifehub_native_push_tokens')
+    .upsert({
+      user_id: currentUser.id,
+      workspace_key: cloudConfig.workspaceKey,
+      platform: 'ios',
+      token,
+      bundle_id: 'com.lifehub.app',
+      enabled: true,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'token' });
+
+  if (error) {
+    if (['42P01', 'PGRST205'].includes(error.code)) return;
+    throw error;
+  }
+}
+
+async function disableNativePushToken() {
+  if (!supabaseClient || !currentUser) return;
+  const token = localStorage.getItem(nativePushTokenKey);
+  if (!token) return;
+
+  const { error } = await supabaseClient
+    .from('lifehub_native_push_tokens')
+    .update({ enabled: false, updated_at: new Date().toISOString() })
+    .eq('token', token)
+    .eq('user_id', currentUser.id);
+
+  if (error && !['42P01', 'PGRST205'].includes(error.code)) throw error;
+  localStorage.removeItem(nativePushTokenKey);
+}
+
+async function handleNativePushNotification(notification = {}) {
+  const data = notification.data || {};
+  const titleText = notification.title || data.title || 'LifeHub';
+  const bodyText = notification.body || data.body || '';
+  const type = data.type || notification.type || '';
+
+  showToast(titleText, bodyText);
+  if (currentUser && isCloudReady() && ['invite_accepted', 'item_added', 'due_reminder'].includes(type)) {
+    await loadStateFromCloud().catch(console.error);
+    await loadNotifications().catch(console.error);
+  }
 }
 
 function getVapidPublicKey() {
@@ -1120,6 +1218,62 @@ function saveReminderSeen(seen) {
   localStorage.setItem(reminderSeenKey, JSON.stringify(Object.fromEntries(entries)));
 }
 
+async function bootstrapAuth() {
+  await registerNativeAuthListener();
+  await initAuth();
+}
+
+async function registerNativeAuthListener() {
+  if (nativeAuthListenerReady || !isNativeIOS()) return;
+  const App = nativeAppPlugin();
+  if (!App?.addListener) return;
+
+  nativeAuthListenerReady = true;
+  await App.addListener('appUrlOpen', (event) => {
+    handleNativeAuthUrl(event?.url).catch(console.error);
+  });
+
+  const launch = await App.getLaunchUrl?.();
+  if (launch?.url) {
+    applyNativeAuthUrl(launch.url);
+  }
+}
+
+function nativeAppPlugin() {
+  return window.Capacitor?.Plugins?.App || null;
+}
+
+async function handleNativeAuthUrl(urlString) {
+  if (!applyNativeAuthUrl(urlString)) return;
+  await initAuth();
+}
+
+function applyNativeAuthUrl(urlString) {
+  if (!urlString) return false;
+
+  try {
+    const source = new URL(urlString);
+    if (source.protocol !== 'lifehub:') return false;
+
+    const target = new URL(window.location.href);
+    removeAuthParams(target);
+    source.searchParams.forEach((value, key) => {
+      target.searchParams.set(key, value);
+    });
+    target.hash = source.hash || '';
+
+    const invite = target.searchParams.get('invite');
+    if (invite) pendingInviteToken = invite;
+
+    const nextUrl = `${target.pathname}${target.search}${target.hash}`;
+    window.history.replaceState({}, document.title, nextUrl || window.location.pathname);
+    return true;
+  } catch (error) {
+    console.warn('Native auth URL handling failed', error);
+    return false;
+  }
+}
+
 async function initAuth() {
   if (!supabaseClient) {
     currentUser = null;
@@ -1199,6 +1353,12 @@ async function handleAuthRedirect() {
 }
 
 function buildAuthRedirectUrl() {
+  if (isNativeIOS()) {
+    const nativeUrl = new URL('lifehub://auth');
+    if (pendingInviteToken) nativeUrl.searchParams.set('invite', pendingInviteToken);
+    return nativeUrl.toString();
+  }
+
   const url = new URL(window.location.href);
   removeAuthParams(url);
   url.hash = '';
@@ -1368,6 +1528,7 @@ async function sendMagicLink() {
 async function signOut() {
   if (!supabaseClient) return;
   await disablePushSubscription().catch(console.error);
+  await disableNativePushToken().catch(console.error);
   await supabaseClient.auth.signOut();
   currentUser = null;
   stopNotificationPolling();
@@ -1476,6 +1637,7 @@ async function acceptPendingInvite() {
     window.history.replaceState({}, document.title, window.location.pathname);
     updateAuthUI();
     await subscribeToPushNotifications();
+    await subscribeToNativePushNotifications();
     startNotificationPolling();
     checkDueReminders();
     setSyncStatus('Инвайт принят. Ты добавлен в семью.', false, true);

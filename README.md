@@ -15,7 +15,7 @@ LifeHub is a mobile-first PWA for organizing home tasks, shopping, family items,
 - Family invite links
 - Full-screen invite onboarding
 - Full-screen login and registration
-- In-app reminders and Web Push notifications for nearby due dates
+- In-app reminders, Web Push, and native iOS APNs notifications for nearby due dates
 - New item notifications for other family members
 - Invite acceptance notifications for the invite creator
 - Search, edit, and delete
@@ -69,7 +69,7 @@ For GitHub Pages, publish the repository and enable Pages from the repository se
 
 After this, users do not need to configure Supabase themselves. New cards are saved to the configured Supabase project automatically after sign-in. Attachments in cloud mode are uploaded to the `lifehub-files` Storage bucket.
 
-If you already created the Supabase project earlier, run the current `supabase.sql` again. It adds profile avatars, push subscriptions, item notifications, and updates the invite RPC so accepted invites create a family member card automatically.
+If you already created the Supabase project earlier, run the current `supabase.sql` again. It adds profile avatars, web push subscriptions, native iOS push tokens, item notifications, and updates the invite RPC so accepted invites create a family member card automatically.
 
 ## Family Invites
 
@@ -137,6 +137,51 @@ x-lifehub-push-secret: any-long-random-string
 
 When LifeHub is open and visible, push messages are shown as temporary in-app toasts. When the app is closed or in the background, the service worker shows regular system notifications.
 
+## Native iOS Push Notifications
+
+LifeHub also registers a real iOS APNs device token when the Capacitor app runs on iPhone. Web users keep using VAPID; iOS App Store builds use APNs.
+
+1. Run the latest `supabase.sql` in Supabase SQL Editor. It creates `lifehub_native_push_tokens`.
+2. In Supabase, open `Authentication -> URL Configuration -> Redirect URLs` and add:
+
+```text
+lifehub://auth
+```
+
+3. In Apple Developer, open `Certificates, Identifiers & Profiles -> Keys`.
+4. Create a key with `Apple Push Notifications service (APNs)`, then download the `.p8` file once.
+5. Save the `Key ID`, your `Team ID`, and keep the `.p8` private key outside the repo.
+6. Make sure the app bundle id is:
+
+```text
+com.lifehub.app
+```
+
+7. In Xcode on a Mac, open `ios/App/App.xcworkspace`, select the App target, then add:
+
+```text
+Signing & Capabilities -> Push Notifications
+Signing & Capabilities -> Background Modes -> Remote notifications
+```
+
+8. Add APNs secrets to Supabase. Use `production` for TestFlight/App Store. Use `sandbox` only for local debug builds from Xcode:
+
+```powershell
+npx supabase secrets set APNS_KEY_ID=PASTE_KEY_ID
+npx supabase secrets set APNS_TEAM_ID=PASTE_TEAM_ID
+npx supabase secrets set APNS_BUNDLE_ID=com.lifehub.app
+npx supabase secrets set APNS_ENVIRONMENT=production
+npx supabase secrets set APNS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nPASTE_P8_BODY\n-----END PRIVATE KEY-----"
+```
+
+9. Deploy the sender again:
+
+```powershell
+npx supabase functions deploy send-push
+```
+
+The same scheduled `send-push` call sends due-date reminders, invite accepted alerts, and new item alerts to both web subscriptions and iOS APNs tokens.
+
 ## Branded Auth Email
 
 To send registration/login emails from your company instead of the default Supabase sender:
@@ -183,4 +228,13 @@ npm run cap:sync
 npx cap open ios
 ```
 
-Then archive and upload from Xcode.
+Before uploading:
+
+1. In Xcode, select your Apple Developer team under `Signing & Capabilities`.
+2. Confirm the bundle id is `com.lifehub.app`.
+3. Add `Push Notifications` and `Background Modes -> Remote notifications`.
+4. Set the App Store icon in `Assets.xcassets`.
+5. Choose `Any iOS Device` as the run destination.
+6. Open `Product -> Archive`.
+7. In Organizer, click `Distribute App -> App Store Connect -> Upload`.
+8. In App Store Connect, create the app, fill privacy details, screenshots, description, age rating, and submit for review.

@@ -10,7 +10,9 @@
     "cap:open:ios": "npm run cap:sync && npx cap open ios"
   },
   "dependencies": {
-    "@capacitor/core": "^7.4.4"
+    "@capacitor/app": "^7.1.2",
+    "@capacitor/core": "^7.4.4",
+    "@capacitor/push-notifications": "^7.0.6"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.4.4",
