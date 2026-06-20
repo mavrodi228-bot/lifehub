@@ -1220,6 +1220,10 @@ function saveReminderSeen(seen) {
 
 async function bootstrapAuth() {
   await registerNativeAuthListener();
+  if (forwardAuthRedirectToNativeApp()) {
+    window.setTimeout(() => initAuth().catch(console.error), 1200);
+    return;
+  }
   await initAuth();
 }
 
@@ -1241,6 +1245,44 @@ async function registerNativeAuthListener() {
 
 function nativeAppPlugin() {
   return window.Capacitor?.Plugins?.App || null;
+}
+
+function forwardAuthRedirectToNativeApp() {
+  if (isNativeIOS() || !isAppleMobileBrowser()) return false;
+
+  const url = new URL(window.location.href);
+  if (!hasAuthRedirectPayload(url)) return false;
+
+  const redirectKey = `lifehub-native-auth-${url.search}${url.hash}`;
+  if (sessionStorage.getItem(redirectKey)) return false;
+  sessionStorage.setItem(redirectKey, '1');
+
+  window.location.href = buildNativeAuthUrl(url);
+  return true;
+}
+
+function isAppleMobileBrowser() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent || '');
+}
+
+function hasAuthRedirectPayload(url) {
+  const hash = new URLSearchParams(url.hash.replace(/^#/, ''));
+  return Boolean(
+    url.searchParams.get('code')
+      || url.searchParams.get('token_hash')
+      || url.searchParams.get('error')
+      || hash.get('access_token')
+      || hash.get('error'),
+  );
+}
+
+function buildNativeAuthUrl(sourceUrl) {
+  const nativeUrl = new URL('lifehub://auth');
+  sourceUrl.searchParams.forEach((value, key) => {
+    nativeUrl.searchParams.set(key, value);
+  });
+  nativeUrl.hash = sourceUrl.hash || '';
+  return nativeUrl.toString();
 }
 
 async function handleNativeAuthUrl(urlString) {
