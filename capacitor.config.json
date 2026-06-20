@@ -2,10 +2,12 @@
   "appId": "com.lifehub.app",
   "appName": "LifeHub",
   "webDir": "www",
+  "backgroundColor": "#E9F8FB",
   "server": {
     "androidScheme": "https"
   },
   "ios": {
-    "contentInset": "automatic"
+    "backgroundColor": "#E9F8FB",
+    "contentInset": "never"
   }
 }

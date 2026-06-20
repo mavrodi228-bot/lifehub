@@ -30,10 +30,21 @@
 html,
 body {
   min-height: 100%;
+  background: var(--paper);
+  scrollbar-width: none;
+  overscroll-behavior: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 body {
   position: relative;
+  min-height: 100dvh;
   margin: 0;
   background:
     linear-gradient(150deg, rgba(245, 255, 247, 0.88), rgba(127, 215, 255, 0.28) 42%, rgba(255, 244, 215, 0.68)),
@@ -42,6 +53,7 @@ body {
   font-family: ui-rounded, "SF Pro Rounded", "Aptos", "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
+  overscroll-behavior-y: none;
 }
 
 body::before,
@@ -73,6 +85,12 @@ body::after {
 
 body.access-active {
   overflow: hidden;
+}
+
+body.native-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background-color: var(--paper);
 }
 
 body.access-active .app-shell {
@@ -116,10 +134,36 @@ textarea:focus-visible {
   min-height: 100dvh;
   max-width: 520px;
   margin: 0 auto;
-  padding: env(safe-area-inset-top) 18px calc(100px + env(safe-area-inset-bottom));
+  padding: 0 18px calc(112px + env(safe-area-inset-bottom));
   transition:
     opacity 220ms ease,
     transform 220ms var(--spring);
+}
+
+.app-shell::after {
+  position: fixed;
+  top: max(8px, env(safe-area-inset-top));
+  left: 50%;
+  z-index: 100;
+  width: min(240px, calc(100vw - 56px));
+  height: 4px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, transparent, rgba(25, 212, 189, 0.95), rgba(184, 255, 117, 0.95), transparent);
+  box-shadow: 0 8px 24px rgba(25, 212, 189, 0.28);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(-50%, -14px, 0) scaleX(0.58);
+  transition:
+    opacity 180ms ease,
+    transform 240ms var(--spring);
+}
+
+body.is-loading .app-shell::after {
+  opacity: 1;
+  transform: translate3d(-50%, 0, 0) scaleX(1);
+  animation: loadingCurrent 1.1s ease-in-out infinite;
 }
 
 .topbar {
@@ -186,6 +230,10 @@ h1 {
 .screen.active {
   display: block;
   animation: screenIn 240ms ease both;
+}
+
+.screen.active > * {
+  animation: softRise 340ms var(--spring) both;
 }
 
 .hero {
@@ -538,6 +586,7 @@ h1 {
   text-align: left;
   box-shadow: var(--soft-shadow);
   backdrop-filter: blur(18px) saturate(1.14);
+  animation: cardIn 300ms var(--spring) both;
   transition:
     transform 240ms var(--spring),
     border-color 240ms ease,
@@ -1130,7 +1179,7 @@ h1 {
 .tabbar {
   position: fixed;
   right: max(12px, calc((100vw - 520px) / 2 + 12px));
-  bottom: max(12px, env(safe-area-inset-bottom));
+  bottom: max(10px, env(safe-area-inset-bottom));
   left: max(12px, calc((100vw - 520px) / 2 + 12px));
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -1249,6 +1298,43 @@ h1 {
   to {
     opacity: 0;
     transform: translateY(-8px) scale(0.98);
+  }
+}
+
+@keyframes loadingCurrent {
+  0%,
+  100% {
+    filter: saturate(1);
+    opacity: 0.82;
+  }
+
+  50% {
+    filter: saturate(1.35);
+    opacity: 1;
+  }
+}
+
+@keyframes softRise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cardIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 

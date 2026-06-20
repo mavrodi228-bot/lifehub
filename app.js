@@ -145,6 +145,10 @@ let isLoadingNotifications = false;
 let serviceWorkerRegistration = null;
 let nativeAuthListenerReady = false;
 let nativePushListenersReady = false;
+let nativePushRegistrationPromise = null;
+let nativePushLastErrorAt = 0;
+let loginSyncPromise = null;
+let appLoadingDepth = 0;
 const seenNotificationIds = new Set();
 
 form.addEventListener('submit', (event) => {
@@ -228,6 +232,7 @@ updateCloudBadge();
 renderAvatarPicker();
 render();
 registerServiceWorker();
+configureNativeShell();
 bootstrapAuth();
 
 function createItem(title, category = 'Общее', dueDate = '', note = '', done = false, attachment = null, avatar = '') {
@@ -757,7 +762,7 @@ async function pushToCloud() {
 
   setSyncStatus('Выгружаю локальные карточки...');
   try {
-    const rows = await pushStateToCloud();
+    const rows = await withAppLoading(pushStateToCloud(), 'Сохранение');
     setSyncStatus(`Готово: выгружено ${rows.length} карточек.`, false, true);
   } catch (error) {
     setSyncStatus(error.message || 'Выгрузка не удалась.', true);
@@ -772,7 +777,7 @@ async function pullFromCloud() {
 
   setSyncStatus('Обновляю семейные данные...');
   try {
-    const data = await loadStateFromCloud();
+    const data = await withAppLoading(loadStateFromCloud(), 'Обновление');
     if (!data.length) {
       setSyncStatus('В облаке пока нет карточек. Локальные данные оставлены на месте.', false, true);
       return;
@@ -784,6 +789,16 @@ async function pullFromCloud() {
 }
 
 async function syncAfterLogin() {
+  if (loginSyncPromise) return loginSyncPromise;
+  loginSyncPromise = withAppLoading(runSyncAfterLogin(), 'Синхронизация');
+  try {
+    return await loginSyncPromise;
+  } finally {
+    loginSyncPromise = null;
+  }
+}
+
+async function runSyncAfterLogin() {
   await ensureWorkspaceForCurrentUser();
   const memberItem = ensureCurrentUserFamilyMember('Профиль участника LifeHub');
   if (memberItem) await upsertCloudItem('family', memberItem);
@@ -794,6 +809,21 @@ async function syncAfterLogin() {
   startNotificationPolling();
   checkDueReminders();
   setSyncStatus('Аккаунт подключен. Семейные дела синхронизированы.', false, true);
+}
+
+async function withAppLoading(promise, label = 'Загрузка') {
+  appLoadingDepth += 1;
+  document.body.classList.add('is-loading');
+  document.body.dataset.loadingLabel = label;
+  try {
+    return await promise;
+  } finally {
+    appLoadingDepth = Math.max(0, appLoadingDepth - 1);
+    if (appLoadingDepth === 0) {
+      document.body.classList.remove('is-loading');
+      delete document.body.dataset.loadingLabel;
+    }
+  }
 }
 
 async function pushStateToCloud() {
@@ -876,6 +906,22 @@ function showToast(titleText, bodyText = '', type = 'info') {
     toast.classList.add('leaving');
     window.setTimeout(() => toast.remove(), 220);
   }, 5200);
+}
+
+async function configureNativeShell() {
+  if (!isNativeIOS()) return;
+  document.body.classList.add('native-shell');
+
+  const StatusBar = window.Capacitor?.Plugins?.StatusBar;
+  if (!StatusBar) return;
+
+  try {
+    await StatusBar.setOverlaysWebView?.({ overlay: true });
+    await StatusBar.setStyle?.({ style: 'DARK' });
+    await StatusBar.setBackgroundColor?.({ color: '#00000000' });
+  } catch (error) {
+    console.warn('Native status bar setup failed', error);
+  }
 }
 
 async function requestNotificationAccess() {
@@ -984,6 +1030,16 @@ async function subscribeToNativePushNotifications() {
   const PushNotifications = nativePushPlugin();
   if (!PushNotifications) return false;
 
+  if (nativePushRegistrationPromise) return nativePushRegistrationPromise;
+  nativePushRegistrationPromise = registerNativePushNotifications(PushNotifications);
+  try {
+    return await nativePushRegistrationPromise;
+  } finally {
+    nativePushRegistrationPromise = null;
+  }
+}
+
+async function registerNativePushNotifications(PushNotifications) {
   if (!nativePushListenersReady) {
     nativePushListenersReady = true;
     await PushNotifications.addListener('registration', (token) => {
@@ -992,7 +1048,7 @@ async function subscribeToNativePushNotifications() {
     });
     await PushNotifications.addListener('registrationError', (error) => {
       console.warn('Native push registration failed', error);
-      showToast('LifeHub', 'Не получилось включить уведомления iOS.');
+      showNativePushError(error);
     });
     await PushNotifications.addListener('pushNotificationReceived', (notification) => {
       handleNativePushNotification(notification).catch(console.error);
@@ -1003,9 +1059,40 @@ async function subscribeToNativePushNotifications() {
   }
 
   const permission = await PushNotifications.requestPermissions();
-  if (permission.receive !== 'granted') return false;
+  if (permission.receive !== 'granted') {
+    showToast('LifeHub', 'Уведомления выключены в настройках iPhone.', 'error');
+    return false;
+  }
   await PushNotifications.register();
   return true;
+}
+
+function showNativePushError(error) {
+  const now = Date.now();
+  if (now - nativePushLastErrorAt < 12000) return;
+  nativePushLastErrorAt = now;
+
+  showToast('LifeHub', nativePushErrorMessage(error), 'error');
+}
+
+function nativePushErrorMessage(error) {
+  const raw = [
+    error?.errorMessage,
+    error?.message,
+    error?.code,
+    typeof error === 'string' ? error : '',
+  ].filter(Boolean).join(' ');
+  const normalized = raw.toLowerCase();
+
+  if (normalized.includes('aps-environment') || normalized.includes('entitlement')) {
+    return 'В Xcode включи Push Notifications и пересобери приложение.';
+  }
+
+  if (normalized.includes('permission') || normalized.includes('denied')) {
+    return 'Разреши уведомления для LifeHub в настройках iPhone.';
+  }
+
+  return 'Проверь Push Notifications capability, Bundle ID и Apple Developer Team.';
 }
 
 async function saveNativePushToken(token) {
@@ -1019,7 +1106,7 @@ async function saveNativePushToken(token) {
       workspace_key: cloudConfig.workspaceKey,
       platform: 'ios',
       token,
-      bundle_id: 'com.lifehub.app',
+      bundle_id: currentBundleId(),
       enabled: true,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'token' });
@@ -1028,6 +1115,12 @@ async function saveNativePushToken(token) {
     if (['42P01', 'PGRST205'].includes(error.code)) return;
     throw error;
   }
+}
+
+function currentBundleId() {
+  return window.LIFEHUB_CONFIG?.bundleId
+    || window.Capacitor?.getConfig?.().appId
+    || 'com.lifehub.app';
 }
 
 async function disableNativePushToken() {

@@ -12,7 +12,8 @@
   "dependencies": {
     "@capacitor/app": "^7.1.2",
     "@capacitor/core": "^7.4.4",
-    "@capacitor/push-notifications": "^7.0.6"
+    "@capacitor/push-notifications": "^7.0.6",
+    "@capacitor/status-bar": "^7.0.6"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.4.4",
