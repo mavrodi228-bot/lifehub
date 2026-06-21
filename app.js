@@ -71,6 +71,9 @@ const listScreen = document.querySelector('#list-screen');
 const listTitle = document.querySelector('#list-title');
 const itemList = document.querySelector('#item-list');
 const focusList = document.querySelector('#focus-list');
+const assistantSummary = document.querySelector('#assistant-summary');
+const assistantSuggestions = document.querySelector('#assistant-suggestions');
+const assistantActionButton = document.querySelector('#assistant-action-button');
 const input = document.querySelector('#item-input');
 const dateInput = document.querySelector('#date-input');
 const noteInput = document.querySelector('#note-input');
@@ -149,6 +152,7 @@ let nativePushRegistrationPromise = null;
 let nativePushLastErrorAt = 0;
 let loginSyncPromise = null;
 let appLoadingDepth = 0;
+let assistantFocusTarget = null;
 const seenNotificationIds = new Set();
 
 form.addEventListener('submit', (event) => {
@@ -200,6 +204,7 @@ closeDetailButton.addEventListener('click', () => detailDialog.close());
 deleteDetailButton.addEventListener('click', deleteEditingItem);
 detailDialog.addEventListener('close', () => {
   editingItem = null;
+  detailDialog.classList.remove('family-detail');
 });
 syncForm.addEventListener('submit', saveCloudConfig);
 closeSyncButton.addEventListener('click', () => syncDialog.close());
@@ -210,6 +215,9 @@ sendLoginButton.addEventListener('click', sendMagicLink);
 signOutButton.addEventListener('click', signOut);
 createInviteButton.addEventListener('click', createInviteLink);
 copyInviteButton.addEventListener('click', copyInviteLink);
+if (assistantActionButton) {
+  assistantActionButton.addEventListener('click', openAssistantTarget);
+}
 
 tabs.forEach((tab) => {
   tab.addEventListener('click', () => {
@@ -436,11 +444,12 @@ async function addItem() {
 
     const item = createItem(
       value,
-      defaultCategory(tab),
-      dateInput.value,
-      noteInput.value.trim(),
+      tab === 'family' ? 'Участник' : defaultCategory(tab),
+      tab === 'family' ? '' : dateInput.value,
+      noteInput.value.trim() || (tab === 'family' ? 'Профиль участника LifeHub' : ''),
       false,
       attachment,
+      tab === 'family' ? randomAvatarId(value) : '',
     );
 
     state[tab] = [item, ...state[tab]];
@@ -463,19 +472,20 @@ async function addItem() {
     alert(error.message || 'Не получилось сохранить карточку.');
   } finally {
     submitButton.disabled = false;
-    submitButton.textContent = 'Добавить';
+    submitButton.textContent = tab === 'family' ? 'Добавить участника' : 'Добавить';
   }
 }
 
 function defaultCategory(tab) {
   if (tab === 'shopping') return 'Покупка';
   if (tab === 'documents') return 'Документ';
-  if (tab === 'family') return 'Семья';
+  if (tab === 'family') return 'Участник';
   return 'Дом';
 }
 
 function render() {
   const tab = state.activeTab;
+  const isFamily = tab === 'family';
   title.textContent = labels[tab];
 
   tabs.forEach((button) => {
@@ -484,13 +494,22 @@ function render() {
 
   homeScreen.classList.toggle('active', tab === 'home');
   listScreen.classList.toggle('active', tab !== 'home');
+  listScreen.classList.toggle('family-mode', isFamily);
+  form.classList.toggle('family-composer', isFamily);
   renderHome();
 
   if (tab !== 'home') {
     input.placeholder = placeholders[tab];
+    noteInput.placeholder = isFamily ? 'Роль, телефон или заметка' : 'Заметка';
     searchInput.value = state.query;
-    clearDoneButton.style.display = tab === 'tasks' ? 'block' : 'none';
-    inviteFamilyButton.style.display = tab === 'family' ? 'block' : 'none';
+    searchInput.placeholder = isFamily ? 'Поиск участника' : 'Поиск';
+    form.querySelector('button[type="submit"]').textContent = isFamily ? 'Добавить участника' : 'Добавить';
+    clearDoneButton.hidden = tab !== 'tasks';
+    inviteFamilyButton.hidden = !isFamily;
+    dateInput.disabled = isFamily;
+    datePresetButtons.forEach((button) => {
+      button.disabled = isFamily;
+    });
     fileRow.classList.toggle('visible', tab === 'documents');
     listTitle.textContent = sectionTitles[tab];
     renderList(tab);
@@ -513,6 +532,7 @@ function renderHome() {
   document.querySelector('#hero-headline').textContent = `${activeTasks.length} дел ждут внимания`;
   document.querySelector('#hero-copy').textContent =
     focus[0]?.dueDate ? `Ближайшее: ${focus[0].title} · ${formatDue(focus[0].dueDate)}` : 'Сегодня можно спокойно разобрать домашние мелочи.';
+  renderAssistant();
 
   focusList.innerHTML = '';
   if (!focus.length) {
@@ -529,14 +549,129 @@ function renderList(tab) {
       if (!query) return true;
       return [item.title, item.category, item.note].join(' ').toLowerCase().includes(query);
     })
-    .sort(compareByDueDate);
+    .sort(tab === 'family' ? newestFirst : compareByDueDate);
 
   itemList.innerHTML = '';
   if (!items.length) {
-    itemList.appendChild(emptyState(query ? 'Ничего не найдено.' : 'Список пуст.'));
+    itemList.appendChild(emptyState(query ? 'Ничего не найдено.' : (tab === 'family' ? 'Пока нет участников семьи.' : 'Список пуст.')));
     return;
   }
   items.forEach((item) => itemList.appendChild(createCard(item, tab)));
+}
+
+function renderAssistant() {
+  if (!assistantSummary || !assistantSuggestions || !assistantActionButton) return;
+
+  const insights = buildAssistantInsights();
+  assistantFocusTarget = insights.target || null;
+  assistantSummary.textContent = insights.summary;
+  assistantActionButton.hidden = !assistantFocusTarget;
+  assistantSuggestions.innerHTML = '';
+
+  insights.suggestions.forEach((suggestion) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'ai-suggestion';
+    const title = document.createElement('strong');
+    title.textContent = suggestion.title;
+    const text = document.createElement('span');
+    text.textContent = suggestion.text;
+    button.append(title, text);
+    button.addEventListener('click', () => {
+      if (suggestion.target) openAssistantTarget(suggestion.target);
+    });
+    assistantSuggestions.appendChild(button);
+  });
+}
+
+function buildAssistantInsights() {
+  const activeItems = allActionItems().filter((item) => !item.done);
+  const datedItems = activeItems.filter((item) => item.dueDate).sort(compareByDueDate);
+  const overdue = datedItems.filter((item) => daysUntil(item.dueDate) < 0);
+  const today = datedItems.filter((item) => daysUntil(item.dueDate) === 0);
+  const soon = datedItems.filter((item) => daysUntil(item.dueDate) > 0 && daysUntil(item.dueDate) <= 7);
+  const withoutDate = activeItems.filter((item) => !item.dueDate);
+  const target = overdue[0] || today[0] || soon[0] || datedItems[0] || activeItems[0] || null;
+  const suggestions = [];
+
+  if (!activeItems.length) {
+    return {
+      summary: 'Все спокойно: активных задач нет. Можно добавить первую бытовую мелочь или документ.',
+      suggestions: [
+        { title: 'Пустой день', text: 'LifeHub готов держать новые дела, покупки и документы в одном месте.' },
+      ],
+      target: null,
+    };
+  }
+
+  if (overdue.length) {
+    suggestions.push({
+      title: 'Сначала просроченное',
+      text: `${overdue[0].title} уже требует внимания.`,
+      target: overdue[0],
+    });
+  }
+
+  if (today.length) {
+    suggestions.push({
+      title: 'На сегодня',
+      text: `${today.length} пункт(а) лучше закрыть до вечера.`,
+      target: today[0],
+    });
+  }
+
+  if (soon.length) {
+    suggestions.push({
+      title: 'Неделя вперед',
+      text: `${soon.length} пункт(а) подходят по сроку в ближайшие 7 дней.`,
+      target: soon[0],
+    });
+  }
+
+  if (withoutDate.length >= 3) {
+    suggestions.push({
+      title: 'Разобрать без срока',
+      text: `${withoutDate.length} пункт(а) висят без даты. Назначь срок двум самым важным.`,
+      target: withoutDate[0],
+    });
+  }
+
+  const documentWithAttachment = activeItems.find((item) => item.source === 'documents' && item.attachment);
+  if (documentWithAttachment) {
+    suggestions.push({
+      title: 'Документы под рукой',
+      text: 'Есть карточки с файлами. Проверь, что важные фото и PDF открываются.',
+      target: documentWithAttachment,
+    });
+  }
+
+  if (!suggestions.length && target) {
+    suggestions.push({
+      title: 'Главный следующий шаг',
+      text: `${target.title} выглядит самым близким по плану.`,
+      target,
+    });
+  }
+
+  const urgentCount = overdue.length + today.length;
+  const summary = urgentCount
+    ? `Нашел ${urgentCount} срочный пункт. Начни с ближайшего, остальное можно спокойно разнести по срокам.`
+    : `Активно ${activeItems.length} пункт(а). Самое полезное сейчас - держать фокус на ближайшей дате.`;
+
+  return {
+    summary,
+    suggestions: suggestions.slice(0, 3),
+    target,
+  };
+}
+
+function openAssistantTarget(target = assistantFocusTarget) {
+  if (!target?.source) return;
+  state.activeTab = target.source;
+  state.query = '';
+  saveState();
+  render();
+  requestAnimationFrame(() => openDetail(target.id));
 }
 
 function allActionItems() {
@@ -551,11 +686,13 @@ function createCard(item, mode) {
   const card = document.createElement('article');
   card.className = `card ${item.done ? 'done' : ''}`;
   const cardMode = item.source || mode;
+  const isFamilyCard = cardMode === 'family';
+  if (isFamilyCard) card.classList.add('family-card');
 
   const marker = document.createElement('button');
   marker.type = 'button';
   marker.className = 'marker';
-  if (cardMode === 'family') {
+  if (isFamilyCard) {
     const avatar = getAvatarById(item.avatar || randomAvatarId(item.title));
     marker.classList.add('avatar-marker');
     marker.style.setProperty('--avatar-color', avatar.color);
@@ -577,9 +714,11 @@ function createCard(item, mode) {
 
   const meta = document.createElement('span');
   meta.className = 'card-meta';
-  meta.textContent = [item.category, item.dueDate ? formatDue(item.dueDate) : 'без даты']
-    .filter(Boolean)
-    .join(' · ');
+  meta.textContent = isFamilyCard
+    ? (item.category || 'Участник')
+    : [item.category, item.dueDate ? formatDue(item.dueDate) : 'без даты']
+      .filter(Boolean)
+      .join(' · ');
 
   content.append(cardTitle, meta);
 
@@ -590,7 +729,7 @@ function createCard(item, mode) {
     content.appendChild(note);
   }
 
-  if (item.dueDate) {
+  if (item.dueDate && !isFamilyCard) {
     const chip = document.createElement('span');
     chip.className = `status-chip ${statusClass(item.dueDate)}`;
     chip.textContent = statusLabel(item.dueDate);
@@ -1905,11 +2044,14 @@ function openDetail(id) {
   if (!found) return;
 
   editingItem = found;
-  detailHeading.textContent = found.item.title;
+  const isFamilyProfile = found.key === 'family';
+  detailDialog.classList.toggle('family-detail', isFamilyProfile);
+  detailHeading.textContent = isFamilyProfile ? 'Профиль' : found.item.title;
   detailTitle.value = found.item.title;
   detailDate.value = found.item.dueDate || '';
-  detailCategory.value = found.item.category || '';
+  detailCategory.value = found.item.category || (isFamilyProfile ? 'Участник' : '');
   detailNote.value = found.item.note || '';
+  detailNote.placeholder = isFamilyProfile ? 'Роль, телефон, привычки или важная заметка' : '';
   renderAttachmentPanel(found.item.attachment);
 
   if (typeof detailDialog.showModal === 'function') {
@@ -2014,12 +2156,13 @@ async function deleteCloudItem(list, item) {
 function saveDetail(event) {
   event.preventDefault();
   if (!editingItem) return;
+  const isFamilyProfile = editingItem.key === 'family';
 
   const next = {
     ...editingItem.item,
     title: detailTitle.value.trim() || editingItem.item.title,
-    dueDate: detailDate.value,
-    category: detailCategory.value.trim() || 'Общее',
+    dueDate: isFamilyProfile ? '' : detailDate.value,
+    category: isFamilyProfile ? (editingItem.item.category || 'Участник') : (detailCategory.value.trim() || 'Общее'),
     note: detailNote.value.trim(),
   };
 

@@ -97,6 +97,19 @@
           </article>
         </section>
 
+        <section class="ai-panel" aria-labelledby="assistant-title">
+          <div class="ai-head">
+            <span class="ai-mark">AI</span>
+            <div>
+              <p class="kicker">LifeHub Assistant</p>
+              <h3 id="assistant-title">Что разобрать первым</h3>
+            </div>
+          </div>
+          <p id="assistant-summary" class="ai-summary">Собираю подсказки по текущим делам.</p>
+          <div id="assistant-suggestions" class="ai-suggestions"></div>
+          <button id="assistant-action-button" class="ai-action" type="button">Открыть важное</button>
+        </section>
+
         <section class="block">
           <h3>Ближайшее</h3>
           <div id="focus-list" class="list"></div>
@@ -129,7 +142,7 @@
 
         <section class="toolbar">
           <input id="search-input" autocomplete="off" placeholder="Поиск" />
-          <button id="invite-family-button" type="button">Инвайт</button>
+          <button id="invite-family-button" type="button">Пригласить</button>
           <button id="clear-done-button" type="button">Очистить</button>
         </section>
 
@@ -177,7 +190,7 @@
             <input id="detail-title" autocomplete="off" />
           </label>
 
-          <div class="composer-grid">
+          <div class="composer-grid detail-schedule-row">
             <label class="field-label">
               Срок
               <input id="detail-date" type="date" />
