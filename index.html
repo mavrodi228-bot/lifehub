@@ -48,6 +48,10 @@
             <input id="access-profile-name" type="text" autocomplete="name" placeholder="Например: Саша" />
           </label>
           <div id="avatar-picker" class="avatar-picker" aria-label="Выбор аватара"></div>
+          <label id="access-avatar-upload" class="avatar-upload">
+            <input id="access-avatar-file" type="file" accept="image/*" />
+            <span>Поставить свое фото</span>
+          </label>
           <label class="access-email-label">
             Email
             <input id="access-auth-email" type="email" autocomplete="email" placeholder="you@example.com" />
@@ -190,6 +194,14 @@
             <input id="detail-title" autocomplete="off" />
           </label>
 
+          <section id="family-avatar-panel" class="detail-avatar-panel">
+            <div id="detail-avatar-preview" class="detail-avatar-preview"></div>
+            <label class="avatar-upload">
+              <input id="detail-avatar-file" type="file" accept="image/*" />
+              <span>Сменить фото</span>
+            </label>
+          </section>
+
           <div class="composer-grid detail-schedule-row">
             <label class="field-label">
               Срок
@@ -273,6 +285,7 @@
         supabaseUrl: '',
         supabaseAnonKey: '',
         vapidPublicKey: '',
+        publicAppUrl: '',
         appName: 'LifeHub',
       };
     </script>

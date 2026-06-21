@@ -496,6 +496,39 @@ h1 {
   box-shadow: 0 0 0 3px rgba(25, 212, 189, 0.28), 0 10px 20px rgba(5, 42, 62, 0.18);
 }
 
+.photo-avatar {
+  background-position: center;
+  background-size: cover;
+  color: transparent;
+  overflow: hidden;
+}
+
+.avatar-upload {
+  display: grid;
+  min-height: 42px;
+  place-items: center;
+  border: 1px dashed rgba(7, 47, 70, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.54);
+  color: #164057;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 900;
+  text-align: center;
+  transition:
+    border-color 220ms ease,
+    background-color 220ms ease,
+    transform 220ms var(--spring);
+}
+
+.avatar-upload:active {
+  transform: scale(0.985);
+}
+
+.avatar-upload input {
+  display: none;
+}
+
 .access-auth-form button {
   min-height: 46px;
   border: 0;
@@ -682,6 +715,11 @@ h1 {
 .status-chip.soon {
   background: rgba(127, 215, 255, 0.52);
   color: #073348;
+}
+
+.status-chip.completed {
+  background: rgba(184, 255, 117, 0.42);
+  color: #164057;
 }
 
 .delete-button {
@@ -1135,6 +1173,24 @@ h1 {
 .detail-dialog.family-detail .detail-schedule-row,
 .detail-dialog.family-detail .attachment-panel {
   display: none;
+}
+
+.detail-avatar-panel {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(7, 47, 70, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.52);
+  padding: 10px;
+}
+
+.detail-avatar-marker {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  box-shadow: 0 12px 24px rgba(5, 42, 62, 0.14);
 }
 
 .detail-actions .secondary-button {

@@ -6,6 +6,15 @@ const reminderSeenKey = 'lifehub-reminder-seen-v1';
 const profileKey = 'lifehub-profile-v1';
 const nativePushTokenKey = 'lifehub-native-push-token-v1';
 const serviceWorkerPath = 'sw.js';
+const completedRetentionMs = 24 * 60 * 60 * 1000;
+const refreshNotificationTypes = new Set([
+  'invite_accepted',
+  'item_added',
+  'item_completed',
+  'item_reopened',
+  'item_removed',
+  'due_reminder',
+]);
 
 const avatarOptions = [
   { id: 'lime', symbol: '◆', color: '#daff72' },
@@ -97,6 +106,7 @@ const accessAuthForm = document.querySelector('#access-auth-form');
 const accessNameRow = document.querySelector('#access-name-row');
 const accessProfileName = document.querySelector('#access-profile-name');
 const avatarPicker = document.querySelector('#avatar-picker');
+const accessAvatarFile = document.querySelector('#access-avatar-file');
 const accessAuthEmail = document.querySelector('#access-auth-email');
 const accessSubmitButton = document.querySelector('#access-submit-button');
 const accessHelper = document.querySelector('#access-helper');
@@ -109,6 +119,9 @@ const detailTitle = document.querySelector('#detail-title');
 const detailDate = document.querySelector('#detail-date');
 const detailCategory = document.querySelector('#detail-category');
 const detailNote = document.querySelector('#detail-note');
+const familyAvatarPanel = document.querySelector('#family-avatar-panel');
+const detailAvatarPreview = document.querySelector('#detail-avatar-preview');
+const detailAvatarFile = document.querySelector('#detail-avatar-file');
 const attachmentPanel = document.querySelector('#attachment-panel');
 const closeDetailButton = document.querySelector('#close-detail-button');
 const deleteDetailButton = document.querySelector('#delete-detail-button');
@@ -134,6 +147,7 @@ const inviteLinkInput = document.querySelector('#invite-link');
 
 let selectedAttachment = null;
 let editingItem = null;
+let pendingDetailAvatar = '';
 let localProfile = loadProfile();
 let selectedAvatar = localProfile.avatar || randomAvatarId();
 let cloudConfig = loadCloudConfig();
@@ -167,7 +181,11 @@ searchInput.addEventListener('input', () => {
 });
 
 clearDoneButton.addEventListener('click', () => {
+  const doneTasks = state.tasks.filter((item) => item.done);
   state.tasks = state.tasks.filter((item) => !item.done);
+  if (isCloudReady() && currentUser) {
+    doneTasks.forEach((item) => deleteCloudItem('tasks', item).catch(console.error));
+  }
   saveState();
   render();
 });
@@ -181,6 +199,10 @@ accessAuthForm.addEventListener('submit', (event) => {
   authEmailInput.value = accessAuthEmail.value;
   sendMagicLink();
 });
+accessAvatarFile?.addEventListener('change', () => handleAvatarFileSelection(accessAvatarFile, (avatar) => {
+  selectedAvatar = avatar;
+  renderAvatarPicker();
+}));
 accessModeButtons.forEach((button) => {
   button.addEventListener('click', () => {
     authMode = button.dataset.authMode || 'login';
@@ -202,8 +224,13 @@ datePresetButtons.forEach((button) => {
 detailForm.addEventListener('submit', saveDetail);
 closeDetailButton.addEventListener('click', () => detailDialog.close());
 deleteDetailButton.addEventListener('click', deleteEditingItem);
+detailAvatarFile?.addEventListener('change', () => handleAvatarFileSelection(detailAvatarFile, (avatar) => {
+  pendingDetailAvatar = avatar;
+  renderDetailAvatarPreview(avatar);
+}));
 detailDialog.addEventListener('close', () => {
   editingItem = null;
+  pendingDetailAvatar = '';
   detailDialog.classList.remove('family-detail');
 });
 syncForm.addEventListener('submit', saveCloudConfig);
@@ -243,7 +270,7 @@ registerServiceWorker();
 configureNativeShell();
 bootstrapAuth();
 
-function createItem(title, category = 'Общее', dueDate = '', note = '', done = false, attachment = null, avatar = '') {
+function createItem(title, category = 'Общее', dueDate = '', note = '', done = false, attachment = null, avatar = '', completedAt = '') {
   return {
     id: Date.now() + Math.floor(Math.random() * 100000),
     title,
@@ -253,7 +280,9 @@ function createItem(title, category = 'Общее', dueDate = '', note = '', don
     done,
     attachment,
     avatar,
+    completedAt: done ? (completedAt || new Date().toISOString()) : '',
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   };
 }
 
@@ -263,7 +292,7 @@ function loadState() {
     if (!saved) return structuredClone(defaultState);
 
     const parsed = JSON.parse(saved);
-    return {
+    return pruneExpiredCompletedItems({
       ...structuredClone(defaultState),
       ...parsed,
       tasks: normalizeList(parsed.tasks, defaultState.tasks),
@@ -271,9 +300,9 @@ function loadState() {
       documents: normalizeList(parsed.documents, defaultState.documents),
       family: normalizeList(parsed.family, defaultState.family),
       query: '',
-    };
+    });
   } catch {
-    return structuredClone(defaultState);
+    return pruneExpiredCompletedItems(structuredClone(defaultState));
   }
 }
 
@@ -289,7 +318,9 @@ function normalizeList(items, fallback) {
     done: Boolean(item.done),
     attachment: item.attachment || null,
     avatar: item.avatar || '',
+    completedAt: item.completedAt || '',
     createdAt: item.createdAt || new Date().toISOString(),
+    updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
   }));
 }
 
@@ -305,6 +336,20 @@ function noteFromMeta(meta = '') {
 
 function saveState() {
   localStorage.setItem(storageKey, JSON.stringify(state));
+}
+
+function pruneExpiredCompletedItems(nextState = state, onPruned) {
+  const now = Date.now();
+  ['tasks', 'shopping', 'documents'].forEach((list) => {
+    nextState[list] = nextState[list].filter((item) => {
+      if (!item.done || !item.completedAt) return true;
+      const completedTime = new Date(item.completedAt).getTime();
+      const expired = Number.isFinite(completedTime) && now - completedTime > completedRetentionMs;
+      if (expired && onPruned) onPruned(list, item);
+      return !expired;
+    });
+  });
+  return nextState;
 }
 
 function loadProfile() {
@@ -332,9 +377,42 @@ function getAvatarById(id) {
   return avatarOptions.find((avatar) => avatar.id === id) || avatarOptions[0];
 }
 
+function isAvatarPhoto(value = '') {
+  return value.startsWith('data:image/') || value.startsWith('http://') || value.startsWith('https://');
+}
+
+function paintAvatarElement(element, avatarValue = '', name = '') {
+  if (!element) return;
+  element.textContent = '';
+  element.style.removeProperty('background-image');
+  element.style.removeProperty('--avatar-color');
+  element.classList.toggle('photo-avatar', isAvatarPhoto(avatarValue));
+
+  if (isAvatarPhoto(avatarValue)) {
+    element.style.backgroundImage = `url("${avatarValue}")`;
+    element.setAttribute('aria-label', name ? `Фото ${name}` : 'Фото профиля');
+    return;
+  }
+
+  const avatar = getAvatarById(avatarValue || randomAvatarId(name));
+  element.style.setProperty('--avatar-color', avatar.color);
+  element.textContent = avatarLabel(avatar.id, name);
+  element.setAttribute('aria-label', name ? `Аватар ${name}` : 'Аватар профиля');
+}
+
 function renderAvatarPicker() {
   if (!avatarPicker) return;
   avatarPicker.innerHTML = '';
+
+  if (isAvatarPhoto(selectedAvatar)) {
+    const photoButton = document.createElement('button');
+    photoButton.type = 'button';
+    photoButton.className = 'avatar-option photo-avatar active';
+    photoButton.style.backgroundImage = `url("${selectedAvatar}")`;
+    photoButton.title = 'Твое фото';
+    avatarPicker.appendChild(photoButton);
+  }
+
   avatarOptions.forEach((avatar) => {
     const button = document.createElement('button');
     button.type = 'button';
@@ -348,6 +426,59 @@ function renderAvatarPicker() {
       renderAvatarPicker();
     });
     avatarPicker.appendChild(button);
+  });
+}
+
+async function handleAvatarFileSelection(inputElement, onReady) {
+  const file = inputElement.files?.[0];
+  if (!file) return;
+  try {
+    const avatar = await readAvatarFile(file);
+    onReady(avatar);
+    showToast('Фото готово', 'Аватар обновится после сохранения профиля.');
+  } catch (error) {
+    alert(error.message || 'Не получилось обработать фото.');
+  } finally {
+    inputElement.value = '';
+  }
+}
+
+async function readAvatarFile(file) {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Выбери изображение для аватара.');
+  }
+  if (file.size > 4000000) {
+    throw new Error('Фото слишком большое. Выбери изображение до 4 МБ.');
+  }
+
+  const imageUrl = URL.createObjectURL(file);
+  try {
+    const image = await loadImage(imageUrl);
+    const size = 160;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Браузер не смог подготовить аватар.');
+
+    const scale = Math.max(size / image.width, size / image.height);
+    const width = image.width * scale;
+    const height = image.height * scale;
+    const x = (size - width) / 2;
+    const y = (size - height) / 2;
+    context.drawImage(image, x, y, width, height);
+    return canvas.toDataURL('image/jpeg', 0.82);
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Фото не открылось. Попробуй другой файл.'));
+    image.src = src;
   });
 }
 
@@ -484,6 +615,15 @@ function defaultCategory(tab) {
 }
 
 function render() {
+  let prunedAny = false;
+  pruneExpiredCompletedItems(state, (list, item) => {
+    prunedAny = true;
+    if (isCloudReady() && currentUser) {
+      deleteCloudItem(list, item).catch(console.error);
+    }
+  });
+  if (prunedAny) saveState();
+
   const tab = state.activeTab;
   const isFamily = tab === 'family';
   title.textContent = labels[tab];
@@ -549,7 +689,7 @@ function renderList(tab) {
       if (!query) return true;
       return [item.title, item.category, item.note].join(' ').toLowerCase().includes(query);
     })
-    .sort(tab === 'family' ? newestFirst : compareByDueDate);
+    .sort(tab === 'family' ? newestFirst : compareListItems);
 
   itemList.innerHTML = '';
   if (!items.length) {
@@ -693,16 +833,14 @@ function createCard(item, mode) {
   marker.type = 'button';
   marker.className = 'marker';
   if (isFamilyCard) {
-    const avatar = getAvatarById(item.avatar || randomAvatarId(item.title));
     marker.classList.add('avatar-marker');
-    marker.style.setProperty('--avatar-color', avatar.color);
-    marker.textContent = avatarLabel(avatar.id, item.title);
+    paintAvatarElement(marker, item.avatar || randomAvatarId(item.title), item.title);
     marker.disabled = true;
   } else {
     marker.textContent = item.done ? '✓' : markerText(cardMode);
   }
   marker.addEventListener('click', () => {
-    if (mode === 'tasks') toggleTask(item.id);
+    if (!isFamilyCard) setItemCompletion(cardMode, item.id, !item.done);
   });
 
   const content = document.createElement('div');
@@ -729,7 +867,12 @@ function createCard(item, mode) {
     content.appendChild(note);
   }
 
-  if (item.dueDate && !isFamilyCard) {
+  if (item.done && !isFamilyCard) {
+    const chip = document.createElement('span');
+    chip.className = 'status-chip completed';
+    chip.textContent = completedTickerLabel(item.completedAt);
+    content.appendChild(chip);
+  } else if (item.dueDate && !isFamilyCard) {
     const chip = document.createElement('span');
     chip.className = `status-chip ${statusClass(item.dueDate)}`;
     chip.textContent = statusLabel(item.dueDate);
@@ -746,8 +889,15 @@ function createCard(item, mode) {
   const remove = document.createElement('button');
   remove.type = 'button';
   remove.className = 'delete-button';
-  remove.textContent = '×';
-  remove.addEventListener('click', () => deleteItem(item.id));
+  remove.textContent = isFamilyCard ? '×' : (item.done ? '↺' : '✓');
+  remove.title = isFamilyCard ? 'Удалить участника' : (item.done ? 'Вернуть в активные' : 'Отметить выполненным');
+  remove.addEventListener('click', () => {
+    if (isFamilyCard) {
+      deleteItem(item.id);
+      return;
+    }
+    setItemCompletion(cardMode, item.id, !item.done);
+  });
 
   content.addEventListener('click', () => openDetail(item.id));
 
@@ -794,12 +944,28 @@ async function uploadAttachment(file) {
 }
 
 function toggleTask(id) {
-  state.tasks = state.tasks.map((task) =>
-    task.id === id ? { ...task, done: !task.done } : task,
-  );
   const task = state.tasks.find((item) => item.id === id);
-  if (task && isCloudReady() && currentUser) {
-    upsertCloudItem('tasks', task).catch(console.error);
+  if (task) setItemCompletion('tasks', id, !task.done);
+}
+
+function setItemCompletion(list, id, done) {
+  if (!state[list] || list === 'family') return;
+  let changedItem = null;
+  state[list] = state[list].map((item) => {
+    if (item.id !== id) return item;
+    changedItem = {
+      ...item,
+      done,
+      completedAt: done ? new Date().toISOString() : '',
+      updatedAt: new Date().toISOString(),
+    };
+    return changedItem;
+  });
+
+  if (!changedItem) return;
+  if (isCloudReady() && currentUser) {
+    upsertCloudItem(list, changedItem).catch(console.error);
+    notifyHouseholdItemChanged(done ? 'item_completed' : 'item_reopened', list, changedItem).catch(console.error);
   }
   saveState();
   render();
@@ -829,6 +995,14 @@ function compareByDueDate(a, b) {
   if (!a.dueDate) return 1;
   if (!b.dueDate) return -1;
   return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+}
+
+function compareListItems(a, b) {
+  if (a.done !== b.done) return a.done ? 1 : -1;
+  if (a.done && b.done) {
+    return new Date(b.completedAt || b.createdAt).getTime() - new Date(a.completedAt || a.createdAt).getTime();
+  }
+  return compareByDueDate(a, b);
 }
 
 function newestFirst(a, b) {
@@ -994,6 +1168,9 @@ async function loadStateFromCloud() {
   data.forEach((row) => {
     if (state[row.list]) state[row.list].push(rowToItem(row));
   });
+  pruneExpiredCompletedItems(state, (list, item) => {
+    deleteCloudItem(list, item).catch(console.error);
+  });
   saveState();
   render();
   checkDueReminders();
@@ -1081,7 +1258,7 @@ async function registerServiceWorker() {
       if (event.data?.type !== 'lifehub:push') return;
       const notification = event.data.notification || {};
       showToast(notification.title || 'LifeHub', notification.body || '');
-      if (notification.type === 'invite_accepted' || notification.type === 'item_added') {
+      if (refreshNotificationTypes.has(notification.type)) {
         loadStateFromCloud().catch(console.error);
       }
     });
@@ -1284,7 +1461,7 @@ async function handleNativePushNotification(notification = {}) {
   const type = data.type || notification.type || '';
 
   showToast(titleText, bodyText);
-  if (currentUser && isCloudReady() && ['invite_accepted', 'item_added', 'due_reminder'].includes(type)) {
+  if (currentUser && isCloudReady() && refreshNotificationTypes.has(type)) {
     await loadStateFromCloud().catch(console.error);
     await loadNotifications().catch(console.error);
   }
@@ -1353,7 +1530,7 @@ async function loadNotifications() {
       seenNotificationIds.add(notification.id);
       showToast(notification.title || 'LifeHub', notification.body || '');
       notifyBrowser(notification.title || 'LifeHub', notification.body || '');
-      if (notification.type === 'invite_accepted' || notification.type === 'item_added') {
+      if (refreshNotificationTypes.has(notification.type)) {
         shouldRefreshData = true;
       }
     });
@@ -1374,6 +1551,10 @@ async function loadNotifications() {
 }
 
 async function notifyHouseholdItemAdded(list, item) {
+  return notifyHouseholdItemChanged('item_added', list, item);
+}
+
+async function notifyHouseholdItemChanged(type, list, item) {
   if (!currentUser || !isCloudReady()) return;
 
   const { data: members, error } = await supabaseClient
@@ -1388,14 +1569,15 @@ async function notifyHouseholdItemAdded(list, item) {
   if (!recipients.length) return;
 
   const actor = currentUserProfile().name;
+  const notificationCopy = notificationCopyForItemChange(type, list, item, actor);
   const rows = recipients.map((userId) => ({
     workspace_key: cloudConfig.workspaceKey,
     target_user_id: userId,
     actor_user_id: currentUser.id,
-    type: 'item_added',
-    title: 'Новое дело в LifeHub',
-    body: `${actor}: ${item.title} · ${labels[list]}`,
-    dedupe_key: `item_added:${item.id}:${userId}`,
+    type,
+    title: notificationCopy.title,
+    body: notificationCopy.body,
+    dedupe_key: `${type}:${item.id}:${item.updatedAt || item.completedAt || Date.now()}:${userId}`,
     payload: {
       item_id: String(item.id),
       list,
@@ -1406,6 +1588,32 @@ async function notifyHouseholdItemAdded(list, item) {
     .from('lifehub_notifications')
     .insert(rows);
   if (insertError && insertError.code !== '23505') throw insertError;
+}
+
+function notificationCopyForItemChange(type, list, item, actor) {
+  const place = labels[list] || 'LifeHub';
+  if (type === 'item_completed') {
+    return {
+      title: 'Дело выполнено',
+      body: `${actor} отметил: ${item.title} · ${place}`,
+    };
+  }
+  if (type === 'item_reopened') {
+    return {
+      title: 'Дело вернули в активные',
+      body: `${actor}: ${item.title} · ${place}`,
+    };
+  }
+  if (type === 'item_removed') {
+    return {
+      title: 'Карточка удалена',
+      body: `${actor} удалил: ${item.title} · ${place}`,
+    };
+  }
+  return {
+    title: 'Новое дело в LifeHub',
+    body: `${actor}: ${item.title} · ${place}`,
+  };
 }
 
 function checkDueReminders() {
@@ -1633,8 +1841,10 @@ function buildAuthRedirectUrl() {
     return nativeUrl.toString();
   }
 
-  const url = new URL(window.location.href);
+  const base = (window.LIFEHUB_CONFIG?.publicAppUrl || '').trim() || window.location.href;
+  const url = new URL(base, window.location.href);
   removeAuthParams(url);
+  if (pendingInviteToken) url.searchParams.set('invite', pendingInviteToken);
   url.hash = '';
   return url.toString();
 }
@@ -1681,6 +1891,9 @@ function updateAuthUI() {
   accessModeTabs.hidden = isInvite;
   accessNameRow.hidden = !wantsProfile;
   avatarPicker.hidden = !wantsProfile;
+  if (accessAvatarFile?.closest('.avatar-upload')) {
+    accessAvatarFile.closest('.avatar-upload').hidden = !wantsProfile;
+  }
   accessModeButtons.forEach((button) => {
     button.classList.toggle('active', button.dataset.authMode === authMode);
   });
@@ -1837,7 +2050,7 @@ async function createInviteLink() {
     });
     if (error) throw error;
 
-    inviteLinkInput.value = `${window.location.origin}${window.location.pathname}?invite=${token}`;
+    inviteLinkInput.value = buildPublicInviteLink(token);
     copyInviteButton.disabled = false;
     copyInviteButton.hidden = false;
     setSyncStatus('Инвайт создан. Ссылка действует 14 дней.', false, true);
@@ -1938,6 +2151,7 @@ function ensureCurrentUserFamilyMember(note = 'Профиль участника
     note,
     done: false,
     avatar: profile.avatar,
+    updatedAt: new Date().toISOString(),
   };
   state.family = [
     next,
@@ -1953,6 +2167,31 @@ function ensureCurrentUserFamilyMember(note = 'Профиль участника
   return next;
 }
 
+function isCurrentUserFamilyItem(item) {
+  return currentUser && String(item.id) === `member-${currentUser.id}`;
+}
+
+async function updateCurrentMemberProfile(item) {
+  if (!currentUser || !isCloudReady()) return;
+  const profile = {
+    ...localProfile,
+    name: item.title,
+    avatar: item.avatar || localProfile.avatar || randomAvatarId(item.title),
+  };
+  saveProfile(profile);
+  selectedAvatar = profile.avatar;
+
+  const { error } = await supabaseClient
+    .from('lifehub_members')
+    .update({
+      display_name: profile.name,
+      avatar: profile.avatar,
+    })
+    .eq('workspace_key', cloudConfig.workspaceKey)
+    .eq('user_id', currentUser.id);
+  if (error) throw error;
+}
+
 function getInviteTokenFromUrl() {
   const params = new URLSearchParams(window.location.search);
   return params.get('invite') || '';
@@ -1965,6 +2204,16 @@ function makeInviteToken() {
     return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
   }
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function buildPublicInviteLink(token) {
+  const configuredUrl = (window.LIFEHUB_CONFIG?.publicAppUrl || '').trim();
+  const base = configuredUrl || `${window.location.origin}${window.location.pathname}`;
+  const url = new URL(base, window.location.href);
+  removeAuthParams(url);
+  url.searchParams.set('invite', token);
+  url.hash = '';
+  return url.toString();
 }
 
 function daysUntil(value) {
@@ -1988,6 +2237,15 @@ function statusLabel(value) {
   if (days === 1) return 'завтра';
   if (days <= 14) return `через ${days} дн.`;
   return 'запланировано';
+}
+
+function completedTickerLabel(completedAt = '') {
+  const completedTime = new Date(completedAt).getTime();
+  if (!Number.isFinite(completedTime)) return 'Выполнено · скоро скроется';
+  const left = Math.max(0, completedRetentionMs - (Date.now() - completedTime));
+  const hours = Math.ceil(left / 3600000);
+  if (hours <= 1) return 'Выполнено · исчезнет в течение часа';
+  return `Выполнено · исчезнет через ${hours} ч.`;
 }
 
 function formatDue(value) {
@@ -2047,11 +2305,16 @@ function openDetail(id) {
   const isFamilyProfile = found.key === 'family';
   detailDialog.classList.toggle('family-detail', isFamilyProfile);
   detailHeading.textContent = isFamilyProfile ? 'Профиль' : found.item.title;
+  pendingDetailAvatar = '';
   detailTitle.value = found.item.title;
   detailDate.value = found.item.dueDate || '';
   detailCategory.value = found.item.category || (isFamilyProfile ? 'Участник' : '');
   detailNote.value = found.item.note || '';
   detailNote.placeholder = isFamilyProfile ? 'Роль, телефон, привычки или важная заметка' : '';
+  deleteDetailButton.textContent = isFamilyProfile ? 'Удалить' : (found.item.done ? 'Вернуть' : 'Выполнено');
+  if (familyAvatarPanel) familyAvatarPanel.hidden = !isFamilyProfile;
+  if (detailAvatarFile) detailAvatarFile.value = '';
+  if (isFamilyProfile) renderDetailAvatarPreview(found.item.avatar || randomAvatarId(found.item.title), found.item.title);
   renderAttachmentPanel(found.item.attachment);
 
   if (typeof detailDialog.showModal === 'function') {
@@ -2103,6 +2366,15 @@ function renderAttachmentPanel(attachment) {
   attachmentPanel.appendChild(preview);
 }
 
+function renderDetailAvatarPreview(avatarValue, name = detailTitle.value.trim()) {
+  if (!detailAvatarPreview) return;
+  detailAvatarPreview.innerHTML = '';
+  const marker = document.createElement('div');
+  marker.className = 'avatar-marker detail-avatar-marker';
+  paintAvatarElement(marker, avatarValue, name);
+  detailAvatarPreview.appendChild(marker);
+}
+
 function itemToRow(list, item) {
   return {
     id: String(item.id),
@@ -2115,8 +2387,9 @@ function itemToRow(list, item) {
     done: Boolean(item.done),
     attachment: item.attachment || null,
     avatar: item.avatar || '',
+    completed_at: item.completedAt || null,
     created_at: item.createdAt || new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    updated_at: item.updatedAt || new Date().toISOString(),
   };
 }
 
@@ -2130,7 +2403,9 @@ function rowToItem(row) {
     done: Boolean(row.done),
     attachment: row.attachment || null,
     avatar: row.avatar || '',
+    completedAt: row.completed_at || '',
     createdAt: row.created_at || new Date().toISOString(),
+    updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
   };
 }
 
@@ -2164,6 +2439,8 @@ function saveDetail(event) {
     dueDate: isFamilyProfile ? '' : detailDate.value,
     category: isFamilyProfile ? (editingItem.item.category || 'Участник') : (detailCategory.value.trim() || 'Общее'),
     note: detailNote.value.trim(),
+    avatar: isFamilyProfile ? (pendingDetailAvatar || editingItem.item.avatar || randomAvatarId(detailTitle.value.trim())) : editingItem.item.avatar,
+    updatedAt: new Date().toISOString(),
   };
 
   state[editingItem.key] = state[editingItem.key].map((item) =>
@@ -2171,6 +2448,9 @@ function saveDetail(event) {
   );
   if (isCloudReady() && currentUser) {
     upsertCloudItem(editingItem.key, next).catch(console.error);
+    if (isFamilyProfile && isCurrentUserFamilyItem(next)) {
+      updateCurrentMemberProfile(next).catch(console.error);
+    }
   }
   saveState();
   detailDialog.close();
@@ -2180,7 +2460,11 @@ function saveDetail(event) {
 
 function deleteEditingItem() {
   if (!editingItem) return;
-  deleteItem(editingItem.item.id);
+  if (editingItem.key === 'family') {
+    deleteItem(editingItem.item.id);
+  } else {
+    setItemCompletion(editingItem.key, editingItem.item.id, !editingItem.item.done);
+  }
   detailDialog.close();
   editingItem = null;
 }
